@@ -26,6 +26,22 @@ function Count({ v, pre = 'Rs ' }) {
 const P = { calendar: 'M4 7h16v13H4zM4 11h16M8 3v4M16 3v4', entry: 'M12 5v14M5 12h14', reports: 'M5 20V10M12 20V4M19 20v-7', cars: 'M5 16l1.5-5a2 2 0 011.9-1.4h7.2a2 2 0 011.9 1.4L19 16M4 16h16v3H4zM7 19v1.5M17 19v1.5', drivers: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0' };
 const Ico = ({ k }) => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={P[k]} /></svg>;
 
+function getPinStrength(p) {
+  if (!p || p.length < 6) return { level: 'weak', label: 'Weak' };
+  const allSame = /^(.)\1+$/.test(p);
+  const common = ['123456', '654321', '12345678', 'password', 'admin123', '000000', '111111'];
+  if (allSame || common.includes(p.toLowerCase())) {
+    return { level: 'weak', label: 'Too weak' };
+  }
+  const hasLetter = /[a-zA-Z]/.test(p);
+  const hasNum = /[0-9]/.test(p);
+  const hasSpecial = /[^a-zA-Z0-9]/.test(p);
+  if (p.length >= 8 && ((hasLetter && hasNum) || hasSpecial)) {
+    return { level: 'strong', label: 'Strong' };
+  }
+  return { level: 'okay', label: 'Okay' };
+}
+
 function Form({ fields, init, onSave, onCancel, title }) {
   const [v, setV] = useState(init);
   const set = (k) => (e) => setV({ ...v, [k]: e.target.value });
@@ -45,20 +61,231 @@ function Form({ fields, init, onSave, onCancel, title }) {
   );
 }
 
+function ChangePinModal({ onClose }) {
+  const [oldPin, setOldPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const strength = useMemo(() => getPinStrength(newPin), [newPin]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setErr('');
+    setSuccess('');
+
+    if (newPin !== confirmPin) {
+      return setErr('New PIN and confirm PIN do not match');
+    }
+    if (newPin.length < 6) {
+      return setErr('New PIN must be at least 6 characters');
+    }
+    if (newPin === oldPin) {
+      return setErr('New PIN must be different from old PIN');
+    }
+
+    setLoading(true);
+    try {
+      const r = await fetch('/api/change-pin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ oldPin, newPin, confirmPin })
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(data.error || 'Failed to change PIN');
+      }
+      setSuccess('PIN changed successfully ✓');
+      setTimeout(() => {
+        onClose();
+      }, 1500);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="sheet">
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Change Login PIN / Password</h3>
+        {success ? (
+          <div className="earn" style={{ fontSize: 16, textAlign: 'center', padding: '24px 0' }}>
+            {success}
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <label>
+              Old PIN
+              <div className="pw-wrap">
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  required
+                  autoFocus
+                  autoComplete="current-password"
+                  value={oldPin}
+                  onChange={(e) => setOldPin(e.target.value)}
+                />
+              </div>
+            </label>
+
+            <label>
+              New PIN / Password (min 6 characters)
+              <div className="pw-wrap">
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  required
+                  autoComplete="new-password"
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value)}
+                />
+              </div>
+              {newPin.length > 0 && (
+                <>
+                  <div className={`meter ${strength.level}`}>
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <div
+                    className="strength-text"
+                    style={{
+                      color:
+                        strength.level === 'weak'
+                          ? 'var(--bad)'
+                          : strength.level === 'okay'
+                          ? 'var(--sun)'
+                          : 'var(--earn)'
+                    }}
+                  >
+                    Strength: {strength.label}
+                  </div>
+                </>
+              )}
+            </label>
+
+            <label>
+              Confirm New PIN
+              <div className="pw-wrap">
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  required
+                  autoComplete="new-password"
+                  value={confirmPin}
+                  onChange={(e) => setConfirmPin(e.target.value)}
+                />
+              </div>
+            </label>
+
+            <div style={{ margin: '4px 0 14px' }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', margin: 0, fontSize: 12 }}>
+                <input
+                  type="checkbox"
+                  style={{ width: 'auto', margin: 0 }}
+                  checked={showPw}
+                  onChange={(e) => setShowPw(e.target.checked)}
+                />
+                Show PINs
+              </label>
+            </div>
+
+            {err && <p className="abs" style={{ margin: '0 0 12px 0' }}>{err}</p>}
+
+            <div className="row">
+              <button type="button" className="ghost" onClick={onClose} disabled={loading}>
+                Cancel
+              </button>
+              <button type="submit" disabled={loading}>
+                {loading ? 'Saving…' : 'Save PIN'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState('entry');
   const [d, setD] = useState({ cars: [], drivers: [], entries: [], expenses: [] });
   const [locked, setLocked] = useState(false);
   const [form, setForm] = useState(null);
+  const [pinSheet, setPinSheet] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [pre, setPre] = useState(null);
+
+  // Health and PWA states
+  const [healthInfo, setHealthInfo] = useState(null);
+  const [checkingHealth, setCheckingHealth] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isIos, setIsIos] = useState(false);
+  const [showLoginPw, setShowLoginPw] = useState(false);
+
+  useEffect(() => {
+    // Register Service Worker in production
+    if (process.env.NODE_ENV === 'production' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+
+    // PWA beforeinstallprompt
+    const installHandler = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', installHandler);
+    window.addEventListener('appinstalled', () => setDeferredPrompt(null));
+
+    // iOS detection
+    if (typeof window !== 'undefined') {
+      const ua = window.navigator.userAgent.toLowerCase();
+      const isIosDevice = /iphone|ipad|ipod/.test(ua);
+      const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+      if (isIosDevice && !isStandalone) {
+        setIsIos(true);
+      }
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', installHandler);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
+
+  const checkConnection = async () => {
+    setCheckingHealth(true);
+    try {
+      const res = await fetch('/api/health');
+      const data = await res.json().catch(() => ({}));
+      setHealthInfo(data);
+    } catch (e) {
+      setHealthInfo({ ok: false, error: e.message });
+    } finally {
+      setCheckingHealth(false);
+    }
+  };
 
   const load = async () => {
     try {
       const [cars, drivers, entries, expenses] = await Promise.all(['cars', 'drivers', 'entries', 'expenses'].map((c) => api('GET', c)));
       setD({ cars, drivers, entries, expenses }); setLocked(false); setErr('');
-    } catch (e) { if (e.message === 'auth') setLocked(true); else setErr(e.message); }
+    } catch (e) {
+      if (e.message === 'auth') setLocked(true);
+      else setErr(e.message);
+    }
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -77,14 +304,55 @@ export default function App() {
     <main><div className="card" style={{ marginTop: 40 }}>
       <h3>Enter PIN</h3>
       <form onSubmit={async (e) => {
-        e.preventDefault(); setErr('');
+        e.preventDefault(); setErr(''); setHealthInfo(null);
         const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pin: e.target.pin.value }) });
         if (r.ok) { setLoading(true); load(); } else setErr((await r.json().catch(() => ({}))).error || 'Login failed');
       }}>
-        <input name="pin" type="password" autoFocus placeholder="PIN / password" autoComplete="current-password" />
+        <div className="pw-wrap">
+          <input
+            name="pin"
+            type={showLoginPw ? 'text' : 'password'}
+            autoFocus
+            placeholder="PIN / password"
+            autoComplete="current-password"
+          />
+          <button
+            type="button"
+            className="pin-toggle"
+            onClick={() => setShowLoginPw(!showLoginPw)}
+          >
+            {showLoginPw ? 'Hide' : 'Show'}
+          </button>
+        </div>
         {err && <p className="abs">{err}</p>}
         <button style={{ marginTop: 10, width: '100%' }}>Open</button>
       </form>
+
+      {deferredPrompt && (
+        <button className="ghost" style={{ marginTop: 10, width: '100%' }} onClick={handleInstallApp}>
+          📲 Install CarRent App
+        </button>
+      )}
+      {isIos && <div className="pwa-hint">📲 Tap Share, then Add to Home Screen</div>}
+
+      {err && (
+        <div style={{ marginTop: 14, textAlign: 'center' }}>
+          <button type="button" className="ghost" style={{ fontSize: 12, padding: '7px 12px' }} onClick={checkConnection} disabled={checkingHealth}>
+            {checkingHealth ? 'Checking…' : 'Check connection'}
+          </button>
+        </div>
+      )}
+
+      {healthInfo && (
+        <div className="health-box">
+          <div><b>Cluster:</b> {healthInfo.cluster || '—'}</div>
+          <div><b>Database:</b> {healthInfo.database || '—'}</div>
+          <div><b>User:</b> {healthInfo.username || '—'}</div>
+          <div style={{ color: healthInfo.ok ? 'var(--earn)' : 'var(--bad)', fontWeight: 600, marginTop: 4 }}>
+            {healthInfo.ok ? 'Connected ✓' : `Connection error: ${healthInfo.error || 'Server error'}`}
+          </div>
+        </div>
+      )}
     </div></main>
   );
 
@@ -98,15 +366,111 @@ export default function App() {
           <div><small>Aaj ki earning</small><strong><Count v={todayE} /></strong></div>
           <div className="r"><small>Is mahine ka net</small><b><Count v={monNet} /></b></div>
         </div>
-        <div className="lane" />
-        <button className="lock" onClick={async () => { await fetch('/api/login', { method: 'DELETE' }); setLocked(true); }}>Lock</button>
+
+        {/* Animated road and centered SVG car */}
+        <div className="road">
+          <svg className="car" viewBox="0 0 140 50" aria-hidden="true">
+            <defs>
+              <linearGradient id="beamGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#fff3b0" stopOpacity="0.85" />
+                <stop offset="100%" stopColor="#fff3b0" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+
+            {/* Soft dark ellipse shadow under car */}
+            <ellipse cx="75" cy="46" rx="50" ry="3" fill="rgba(10, 47, 61, 0.35)" />
+
+            {/* Three small white speed/wind lines behind car */}
+            <line className="wind-line" x1="18" y1="22" x2="6" y2="22" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
+            <line className="wind-line wind-line-2" x1="22" y1="28" x2="10" y2="28" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
+            <line className="wind-line wind-line-3" x1="16" y1="34" x2="4" y2="34" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
+
+            {/* Car chassis with suspension bob */}
+            <g className="car-chassis">
+              {/* Headlight beam */}
+              <polygon points="124,27 142,21 142,35 124,30" fill="url(#beamGrad)" />
+
+              {/* Main body orange #ff9f1c */}
+              <path
+                d="M26 38 L26 28 Q26 25 30 25 L46 25 L58 13 Q60 11 64 11 L90 11 Q94 11 97 14 L108 25 L121 25 Q125 25 125 29 L125 38 Q125 40 122 40 L115 40 Q115 35 105 35 Q95 35 95 40 L55 40 Q55 35 45 35 Q35 35 35 40 L28 40 Q26 40 26 38 Z"
+                fill="#ff9f1c"
+              />
+
+              {/* Light teal-white windows #d8f3f5 */}
+              <path d="M49 24 L59 14 L73 14 L73 24 Z" fill="#d8f3f5" />
+              <path d="M76 14 L89 14 L103 24 L76 24 Z" fill="#d8f3f5" />
+
+              {/* Pale yellow front headlight */}
+              <rect x="122" y="26" width="3" height="5" rx="1.5" fill="#fff3b0" />
+
+              {/* Red rear taillight */}
+              <rect x="25" y="26" width="3" height="5" rx="1" fill="#e5484d" />
+            </g>
+
+            {/* Wheels rotating */}
+            <g className="car-wheel" style={{ transformOrigin: '45px 38px' }}>
+              <circle cx="45" cy="38" r="8" fill="#0d1b2a" />
+              <circle cx="45" cy="38" r="4.5" fill="#d7e3ea" />
+              <circle cx="45" cy="38" r="2" fill="#0d1b2a" />
+              <line x1="45" y1="33.5" x2="45" y2="42.5" stroke="#0d1b2a" strokeWidth="1" />
+              <line x1="40.5" y1="38" x2="49.5" y2="38" stroke="#0d1b2a" strokeWidth="1" />
+            </g>
+
+            <g className="car-wheel" style={{ transformOrigin: '105px 38px' }}>
+              <circle cx="105" cy="38" r="8" fill="#0d1b2a" />
+              <circle cx="105" cy="38" r="4.5" fill="#d7e3ea" />
+              <circle cx="105" cy="38" r="2" fill="#0d1b2a" />
+              <line x1="105" y1="33.5" x2="105" y2="42.5" stroke="#0d1b2a" strokeWidth="1" />
+              <line x1="100.5" y1="38" x2="109.5" y2="38" stroke="#0d1b2a" strokeWidth="1" />
+            </g>
+          </svg>
+          <div className="lane" />
+        </div>
+
+        {/* Header menu actions */}
+        <div className="hero-actions">
+          {deferredPrompt && (
+            <button className="hero-btn install-btn" onClick={handleInstallApp} title="Install as Web App">
+              📲 Install
+            </button>
+          )}
+          <button className="hero-btn" onClick={() => setPinSheet(true)} title="Change PIN">
+            PIN
+          </button>
+          <button className="hero-btn" onClick={async () => { await fetch('/api/login', { method: 'DELETE' }); setLocked(true); }}>
+            Lock
+          </button>
+        </div>
       </header>
+
       <main key={tab}>
         {loading && <p className="mute">Loading…</p>}
-        {err && <p className="abs">{err}. MongoDB settings check karo.</p>}
+        {err && (
+          <div className="card" style={{ background: '#fff5f5', border: '1.5px solid #f6c9cb' }}>
+            <p className="abs" style={{ margin: 0 }}>{err}</p>
+            <div style={{ marginTop: 8 }}>
+              <button className="ghost" style={{ fontSize: 12, padding: '6px 10px' }} onClick={checkConnection} disabled={checkingHealth}>
+                {checkingHealth ? 'Checking…' : 'Check connection'}
+              </button>
+            </div>
+            {healthInfo && (
+              <div className="health-box" style={{ marginTop: 8 }}>
+                <div><b>Cluster:</b> {healthInfo.cluster || '—'}</div>
+                <div><b>Database:</b> {healthInfo.database || '—'}</div>
+                <div><b>User:</b> {healthInfo.username || '—'}</div>
+                <div style={{ color: healthInfo.ok ? 'var(--earn)' : 'var(--bad)', fontWeight: 600, marginTop: 4 }}>
+                  {healthInfo.ok ? 'Connected ✓' : `Error: ${healthInfo.error || 'Server error'}`}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isIos && <div className="pwa-hint">📲 Tap Share, then Add to Home Screen to install</div>}
+
         {tab === 'entry' && <Entry {...{ d, car, drv, carOpts, drvOpts, load, del, pre }} />}
         {tab === 'calendar' && <Cal d={d} go={(x) => { setPre(x); setTab('entry'); }} />}
-        {tab === 'reports' && <Reports {...{ d, car, drv }} />}
+        {tab === 'reports' && <Reports {...{ d, car, drv, checkConnection, healthInfo, checkingHealth }} />}
         {tab === 'cars' && <>
           <button style={{ width: '100%', marginBottom: 10 }} onClick={() => setForm({ col: 'cars', init: {}, title: 'New car' })}>+ Add car</button>
           {d.cars.length === 0 && <p className="mute">No cars yet. Add your first car.</p>}
@@ -147,7 +511,9 @@ export default function App() {
           ))}
         </>}
       </main>
+
       {form && <Form title={form.title} init={form.init} fields={form.col === 'cars' ? CARF : DRVF} onCancel={() => setForm(null)} onSave={(v) => upsert(form.col, v)} />}
+      {pinSheet && <ChangePinModal onClose={() => setPinSheet(false)} />}
       <nav>{[['entry', 'Entry'], ['calendar', 'Calendar'], ['reports', 'Reports'], ['cars', 'Cars'], ['drivers', 'Drivers']].map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => { setPre(null); setTab(k); }}><Ico k={k} />{l}</button>)}</nav>
     </>
   );
@@ -315,7 +681,7 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
   );
 }
 
-function Reports({ d, car, drv }) {
+function Reports({ d, car, drv, checkConnection, healthInfo, checkingHealth }) {
   const [p, setP] = useState('month');
   const [val, setVal] = useState({ day: local(), month: local().slice(0, 7), year: local().slice(0, 4) });
   const [by, setBy] = useState('car');
@@ -420,6 +786,28 @@ function Reports({ d, car, drv }) {
             Share
           </button>
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="between">
+          <div>
+            <b>System Connection</b>
+            <div className="mute" style={{ fontSize: 12 }}>Verify MongoDB Atlas connection status</div>
+          </div>
+          <button className="ghost" style={{ fontSize: 12, padding: '7px 12px' }} onClick={checkConnection} disabled={checkingHealth}>
+            {checkingHealth ? 'Checking…' : 'Check connection'}
+          </button>
+        </div>
+        {healthInfo && (
+          <div className="health-box" style={{ marginTop: 10 }}>
+            <div><b>Cluster:</b> {healthInfo.cluster || '—'}</div>
+            <div><b>Database:</b> {healthInfo.database || '—'}</div>
+            <div><b>User:</b> {healthInfo.username || '—'}</div>
+            <div style={{ color: healthInfo.ok ? 'var(--earn)' : 'var(--bad)', fontWeight: 600, marginTop: 4 }}>
+              {healthInfo.ok ? 'Connected ✓' : `Error: ${healthInfo.error || 'Server error'}`}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
