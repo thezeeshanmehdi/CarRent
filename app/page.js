@@ -1,16 +1,27 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { generateDriverPdf, generateCarPdf, downloadOrSharePdf } from '../lib/pdf';
 
 const local = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
 const rs = (n) => 'Rs ' + Math.round(n || 0).toLocaleString('en-US');
 const days = (a, b) => { const o = []; for (let t = Date.parse(a); t <= Date.parse(b); t += 864e5) o.push(new Date(t).toISOString().slice(0, 10)); return o; };
+
 const api = async (m, p, b) => {
-  const r = await fetch('/api/' + p, { method: m, headers: { 'content-type': 'application/json' }, body: b && JSON.stringify(b) });
+  const r = await fetch('/api/' + p, {
+    method: m,
+    headers: { 'content-type': 'application/json' },
+    credentials: 'same-origin',
+    cache: 'no-store',
+    body: b && JSON.stringify(b)
+  });
   if (r.status === 401) throw new Error('auth');
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Server error ' + r.status);
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.error || 'Server error ' + r.status);
+  }
   return r.json();
 };
+
 const CATS = ['Fuel', 'Oil change', 'Repair', 'Service', 'Tyres', 'Challan', 'Insurance', 'Token/Tax', 'Other'].map((c) => [c, c]);
 
 function Count({ v, pre = 'Rs ' }) {
@@ -23,6 +34,7 @@ function Count({ v, pre = 'Rs ' }) {
   }, [v]);
   return <>{pre}{Math.round(n).toLocaleString('en-US')}</>;
 }
+
 const P = { calendar: 'M4 7h16v13H4zM4 11h16M8 3v4M16 3v4', entry: 'M12 5v14M5 12h14', reports: 'M5 20V10M12 20V4M19 20v-7', cars: 'M5 16l1.5-5a2 2 0 011.9-1.4h7.2a2 2 0 011.9 1.4L19 16M4 16h16v3H4zM7 19v1.5M17 19v1.5', drivers: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0' };
 const Ico = ({ k }) => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={P[k]} /></svg>;
 
@@ -92,6 +104,8 @@ function ChangePinModal({ onClose }) {
       const r = await fetch('/api/change-pin', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store',
         body: JSON.stringify({ oldPin, newPin, confirmPin })
       });
       const data = await r.json().catch(() => ({}));
@@ -226,6 +240,11 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [isIos, setIsIos] = useState(false);
   const [showLoginPw, setShowLoginPw] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const pinInputRef = useRef(null);
+
+  // Request counter to prevent stale async responses from overriding state
+  const reqIdRef = useRef(0);
 
   useEffect(() => {
     // Register Service Worker in production
@@ -241,7 +260,7 @@ export default function App() {
     window.addEventListener('beforeinstallprompt', installHandler);
     window.addEventListener('appinstalled', () => setDeferredPrompt(null));
 
-    // iOS detection
+    // iOS Safari detection
     if (typeof window !== 'undefined') {
       const ua = window.navigator.userAgent.toLowerCase();
       const isIosDevice = /iphone|ipad|ipod/.test(ua);
@@ -268,27 +287,90 @@ export default function App() {
   const checkConnection = async () => {
     setCheckingHealth(true);
     try {
-      const res = await fetch('/api/health');
+      const res = await fetch('/api/health', { credentials: 'same-origin', cache: 'no-store' });
       const data = await res.json().catch(() => ({}));
       setHealthInfo(data);
     } catch (e) {
-      setHealthInfo({ ok: false, error: e.message });
+      setHealthInfo({ ok: false, error: e.message || 'Network error' });
     } finally {
       setCheckingHealth(false);
     }
   };
 
   const load = async () => {
+    const currentReqId = ++reqIdRef.current;
+    setLoading(true);
     try {
-      const [cars, drivers, entries, expenses] = await Promise.all(['cars', 'drivers', 'entries', 'expenses'].map((c) => api('GET', c)));
-      setD({ cars, drivers, entries, expenses }); setLocked(false); setErr('');
+      const [cars, drivers, entries, expenses] = await Promise.all(
+        ['cars', 'drivers', 'entries', 'expenses'].map((c) => api('GET', c))
+      );
+      if (currentReqId === reqIdRef.current) {
+        setD({ cars, drivers, entries, expenses });
+        setLocked(false);
+        setErr('');
+      }
     } catch (e) {
-      if (e.message === 'auth') setLocked(true);
-      else setErr(e.message);
+      if (currentReqId === reqIdRef.current) {
+        if (e.message === 'auth') {
+          setLocked(true);
+        } else {
+          setErr(e.message || 'Failed to load data');
+        }
+      }
+    } finally {
+      if (currentReqId === reqIdRef.current) {
+        setLoading(false);
+      }
     }
-    setLoading(false);
   };
+
   useEffect(() => { load(); }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setErr('');
+    setHealthInfo(null);
+    const pinVal = pinInputRef.current ? pinInputRef.current.value : e.target.pin?.value;
+    if (!pinVal) return;
+
+    setLoggingIn(true);
+    try {
+      const r = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store',
+        body: JSON.stringify({ pin: pinVal })
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok) {
+        // Unlock immediately on successful login
+        setLocked(false);
+        setErr('');
+        load();
+      } else {
+        if (r.status === 429) {
+          setErr(data.error || 'Too many attempts. Locked for 15 minutes.');
+        } else {
+          setErr(data.error || 'Wrong PIN');
+        }
+        if (pinInputRef.current) {
+          pinInputRef.current.value = '';
+          pinInputRef.current.focus();
+        }
+      }
+    } catch {
+      setErr('No connection, try again');
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  const handleLock = async () => {
+    await fetch('/api/login', { method: 'DELETE', credentials: 'same-origin', cache: 'no-store' });
+    setLocked(true);
+    setD({ cars: [], drivers: [], entries: [], expenses: [] });
+  };
 
   const car = (id) => d.cars.find((c) => c._id === id)?.name || '—';
   const drv = (id) => d.drivers.find((c) => c._id === id)?.name || '—';
@@ -303,18 +385,16 @@ export default function App() {
   if (locked) return (
     <main><div className="card" style={{ marginTop: 40 }}>
       <h3>Enter PIN</h3>
-      <form onSubmit={async (e) => {
-        e.preventDefault(); setErr(''); setHealthInfo(null);
-        const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pin: e.target.pin.value }) });
-        if (r.ok) { setLoading(true); load(); } else setErr((await r.json().catch(() => ({}))).error || 'Login failed');
-      }}>
+      <form onSubmit={handleLogin}>
         <div className="pw-wrap">
           <input
+            ref={pinInputRef}
             name="pin"
             type={showLoginPw ? 'text' : 'password'}
             autoFocus
             placeholder="PIN / password"
             autoComplete="current-password"
+            disabled={loggingIn}
           />
           <button
             type="button"
@@ -324,8 +404,10 @@ export default function App() {
             {showLoginPw ? 'Hide' : 'Show'}
           </button>
         </div>
-        {err && <p className="abs">{err}</p>}
-        <button style={{ marginTop: 10, width: '100%' }}>Open</button>
+        {err && <p className="abs" style={{ margin: '8px 0 0' }}>{err}</p>}
+        <button style={{ marginTop: 12, width: '100%' }} disabled={loggingIn}>
+          {loggingIn ? 'Checking…' : 'Open'}
+        </button>
       </form>
 
       {deferredPrompt && (
@@ -344,7 +426,7 @@ export default function App() {
       )}
 
       {healthInfo && (
-        <div className="health-box">
+        <div className="health-box" style={{ marginTop: 10 }}>
           <div><b>Cluster:</b> {healthInfo.cluster || '—'}</div>
           <div><b>Database:</b> {healthInfo.database || '—'}</div>
           <div><b>User:</b> {healthInfo.username || '—'}</div>
@@ -362,84 +444,134 @@ export default function App() {
   return (
     <>
       <header className="hero">
-        <div className="hrow">
-          <div><small>Aaj ki earning</small><strong><Count v={todayE} /></strong></div>
-          <div className="r"><small>Is mahine ka net</small><b><Count v={monNet} /></b></div>
-        </div>
-
-        {/* Animated road and centered SVG car */}
-        <div className="road">
-          <svg className="car" viewBox="0 0 140 50" aria-hidden="true">
-            <defs>
-              <linearGradient id="beamGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#fff3b0" stopOpacity="0.85" />
-                <stop offset="100%" stopColor="#fff3b0" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-
-            {/* Soft dark ellipse shadow under car */}
-            <ellipse cx="75" cy="46" rx="50" ry="3" fill="rgba(10, 47, 61, 0.35)" />
-
-            {/* Three small white speed/wind lines behind car */}
-            <line className="wind-line" x1="18" y1="22" x2="6" y2="22" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
-            <line className="wind-line wind-line-2" x1="22" y1="28" x2="10" y2="28" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
-            <line className="wind-line wind-line-3" x1="16" y1="34" x2="4" y2="34" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
-
-            {/* Car chassis with suspension bob */}
-            <g className="car-chassis">
-              {/* Headlight beam */}
-              <polygon points="124,27 142,21 142,35 124,30" fill="url(#beamGrad)" />
-
-              {/* Main body orange #ff9f1c */}
-              <path
-                d="M26 38 L26 28 Q26 25 30 25 L46 25 L58 13 Q60 11 64 11 L90 11 Q94 11 97 14 L108 25 L121 25 Q125 25 125 29 L125 38 Q125 40 122 40 L115 40 Q115 35 105 35 Q95 35 95 40 L55 40 Q55 35 45 35 Q35 35 35 40 L28 40 Q26 40 26 38 Z"
-                fill="#ff9f1c"
-              />
-
-              {/* Light teal-white windows #d8f3f5 */}
-              <path d="M49 24 L59 14 L73 14 L73 24 Z" fill="#d8f3f5" />
-              <path d="M76 14 L89 14 L103 24 L76 24 Z" fill="#d8f3f5" />
-
-              {/* Pale yellow front headlight */}
-              <rect x="122" y="26" width="3" height="5" rx="1.5" fill="#fff3b0" />
-
-              {/* Red rear taillight */}
-              <rect x="25" y="26" width="3" height="5" rx="1" fill="#e5484d" />
-            </g>
-
-            {/* Wheels rotating */}
-            <g className="car-wheel" style={{ transformOrigin: '45px 38px' }}>
-              <circle cx="45" cy="38" r="8" fill="#0d1b2a" />
-              <circle cx="45" cy="38" r="4.5" fill="#d7e3ea" />
-              <circle cx="45" cy="38" r="2" fill="#0d1b2a" />
-              <line x1="45" y1="33.5" x2="45" y2="42.5" stroke="#0d1b2a" strokeWidth="1" />
-              <line x1="40.5" y1="38" x2="49.5" y2="38" stroke="#0d1b2a" strokeWidth="1" />
-            </g>
-
-            <g className="car-wheel" style={{ transformOrigin: '105px 38px' }}>
-              <circle cx="105" cy="38" r="8" fill="#0d1b2a" />
-              <circle cx="105" cy="38" r="4.5" fill="#d7e3ea" />
-              <circle cx="105" cy="38" r="2" fill="#0d1b2a" />
-              <line x1="105" y1="33.5" x2="105" y2="42.5" stroke="#0d1b2a" strokeWidth="1" />
-              <line x1="100.5" y1="38" x2="109.5" y2="38" stroke="#0d1b2a" strokeWidth="1" />
-            </g>
-          </svg>
-          <div className="lane" />
-        </div>
-
-        {/* Header menu actions */}
-        <div className="hero-actions">
+        {/* Top toolbar row holding PIN, Lock, and Install buttons */}
+        <div className="hero-top-toolbar">
           {deferredPrompt && (
-            <button className="hero-btn install-btn" onClick={handleInstallApp} title="Install as Web App">
+            <button className="hero-btn" onClick={handleInstallApp} title="Install as Web App">
               📲 Install
             </button>
           )}
           <button className="hero-btn" onClick={() => setPinSheet(true)} title="Change PIN">
             PIN
           </button>
-          <button className="hero-btn" onClick={async () => { await fetch('/api/login', { method: 'DELETE' }); setLocked(true); }}>
+          <button className="hero-btn" onClick={handleLock} title="Lock Application">
             Lock
           </button>
+        </div>
+
+        {/* Stats row with responsive flex-wrap & clamp sizes */}
+        <div className="hrow">
+          <div className="stat-block">
+            <small>Aaj ki earning</small>
+            <strong className="stat-num"><Count v={todayE} /></strong>
+          </div>
+          <div className="stat-block r">
+            <small>Is mahine ka net</small>
+            <b className="stat-num"><Count v={monNet} /></b>
+          </div>
+        </div>
+
+        {/* Road with HTML wind lines and Pakistani Suzuki Alto SVG */}
+        <div className="road">
+          <div className="wind-lines" aria-hidden="true">
+            <span className="wline wline-1" />
+            <span className="wline wline-2" />
+            <span className="wline wline-3" />
+          </div>
+
+          <svg className="car" viewBox="0 0 140 56" aria-hidden="true">
+            <defs>
+              <linearGradient id="altoGlass" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#9fd3dc" />
+                <stop offset="100%" stopColor="#7fbcc8" />
+              </linearGradient>
+              <linearGradient id="headBeam" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#fff6c9" stopOpacity="0.8" />
+                <stop offset="100%" stopColor="#fff6c9" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+
+            {/* Soft dark shadow */}
+            <ellipse cx="71" cy="48.5" rx="55" ry="3.2" fill="rgba(10,47,61,0.4)" />
+
+            {/* Headlight beam */}
+            <polygon points="123,28 142,21 142,37 123,33" fill="url(#headBeam)" />
+
+            {/* Rear wheel arch inner */}
+            <path d="M 26,41 A 10 10 0 0 1 46,41 Z" fill="#0d1b2a" />
+            {/* Front wheel arch inner */}
+            <path d="M 94,41 A 10 10 0 0 1 114,41 Z" fill="#0d1b2a" />
+
+            {/* Alto Main Body (White) */}
+            <path d="M 20,40.5 L 26,40.5 A 10 10 0 0 1 46,40.5 L 94,40.5 A 10 10 0 0 1 114,40.5 L 121,40.5 Q 124,40 124,37 L 124.5,33 Q 124,29.5 120,29 L 96,25 L 75,13 Q 73,11.5 69,11.5 L 29,12 Q 24,12.5 23.5,16 L 20,32 Q 19.5,37 20,40.5 Z" fill="var(--car-color, #f4f6f8)" />
+
+            {/* Lower body shading */}
+            <path d="M 20,38 L 26,38 A 10 10 0 0 1 46,38 L 94,38 A 10 10 0 0 1 114,38 L 121,38 Q 124,38 124,37 L 124.5,35 L 121,35 L 114,35 A 10 10 0 0 0 94,35 L 46,35 A 10 10 0 0 0 26,35 L 20,35 Z" fill="#e2e6eb" />
+
+            {/* Shoulder character line */}
+            <path d="M 21,30 L 121,28" stroke="#d3d9e0" strokeWidth="0.8" fill="none" />
+
+            {/* Black window frame / pillars */}
+            <path d="M 27,14 L 73,13.5 L 93,24.5 L 25,25 Z" fill="#1f2933" />
+
+            {/* Front Window */}
+            <polygon points="57,15 72,14.5 90,23.5 57,23.5" fill="url(#altoGlass)" />
+
+            {/* Alto Rear Window with signature upswept rear sill */}
+            <polygon points="28,15 54,15 54,23.5 40,23.5 28,19" fill="url(#altoGlass)" />
+
+            {/* Door shut lines */}
+            <line x1="55.5" y1="13.5" x2="55.5" y2="40" stroke="#d3d9e0" strokeWidth="0.8" />
+            <line x1="86" y1="24.5" x2="86" y2="40" stroke="#d3d9e0" strokeWidth="0.8" />
+            <line x1="26" y1="24.5" x2="26" y2="38" stroke="#d3d9e0" strokeWidth="0.8" />
+
+            {/* Door handles */}
+            <rect x="58" y="26.5" width="4.5" height="1.2" rx="0.6" fill="#1f2933" />
+            <rect x="36" y="26.5" width="4.5" height="1.2" rx="0.6" fill="#1f2933" />
+
+            {/* Side mirror */}
+            <path d="M 87,24 L 92,23 Q 93,23 93,24.5 L 89,25.5 Z" fill="var(--car-color, #f4f6f8)" />
+            <rect x="87" y="24" width="2" height="1.5" fill="#1f2933" />
+
+            {/* Front Headlight (swept-back pale yellow) */}
+            <polygon points="113,27 121.5,29 123.5,33 118,33 113,30" fill="#fff6c9" stroke="#cfd8dc" strokeWidth="0.5" />
+
+            {/* Front Grille slot & mesh intake */}
+            <rect x="122.5" y="32" width="2" height="1.5" rx="0.5" fill="#1f2933" />
+            <path d="M 116,36 L 123,36 L 122,39 L 115,39 Z" fill="#1f2933" />
+
+            {/* Front & rear lower bumper trim */}
+            <rect x="119" y="39.5" width="4" height="1.5" rx="0.5" fill="#1f2933" />
+            <rect x="19" y="38" width="3" height="2" rx="0.5" fill="#1f2933" />
+
+            {/* Rear Taillight */}
+            <rect x="19.2" y="26" width="2.5" height="7.5" rx="1" fill="#e5484d" />
+
+            {/* STATIC Rear Wheel (13-inch steel/alloy look) */}
+            <g>
+              <circle cx="36" cy="40.5" r="7.5" fill="#0d1b2a" />
+              <circle cx="36" cy="40.5" r="5.2" fill="#cfd8dc" />
+              <circle cx="36" cy="40.5" r="2.2" fill="#90a4ae" />
+              <circle cx="36" cy="40.5" r="1.1" fill="#0d1b2a" />
+              <circle cx="36" cy="37.8" r="0.6" fill="#0d1b2a" />
+              <circle cx="38.7" cy="40.5" r="0.6" fill="#0d1b2a" />
+              <circle cx="36" cy="43.2" r="0.6" fill="#0d1b2a" />
+              <circle cx="33.3" cy="40.5" r="0.6" fill="#0d1b2a" />
+            </g>
+
+            {/* STATIC Front Wheel (13-inch steel/alloy look) */}
+            <g>
+              <circle cx="104" cy="40.5" r="7.5" fill="#0d1b2a" />
+              <circle cx="104" cy="40.5" r="5.2" fill="#cfd8dc" />
+              <circle cx="104" cy="40.5" r="2.2" fill="#90a4ae" />
+              <circle cx="104" cy="40.5" r="1.1" fill="#0d1b2a" />
+              <circle cx="104" cy="37.8" r="0.6" fill="#0d1b2a" />
+              <circle cx="106.7" cy="40.5" r="0.6" fill="#0d1b2a" />
+              <circle cx="104" cy="43.2" r="0.6" fill="#0d1b2a" />
+              <circle cx="101.3" cy="40.5" r="0.6" fill="#0d1b2a" />
+            </g>
+          </svg>
+          <div className="lane" />
         </div>
       </header>
 
@@ -448,18 +580,21 @@ export default function App() {
         {err && (
           <div className="card" style={{ background: '#fff5f5', border: '1.5px solid #f6c9cb' }}>
             <p className="abs" style={{ margin: 0 }}>{err}</p>
-            <div style={{ marginTop: 8 }}>
-              <button className="ghost" style={{ fontSize: 12, padding: '6px 10px' }} onClick={checkConnection} disabled={checkingHealth}>
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button style={{ fontSize: 13, padding: '7px 14px' }} onClick={load} disabled={loading}>
+                {loading ? 'Retrying…' : 'Retry'}
+              </button>
+              <button className="ghost" style={{ fontSize: 13, padding: '7px 14px' }} onClick={checkConnection} disabled={checkingHealth}>
                 {checkingHealth ? 'Checking…' : 'Check connection'}
               </button>
             </div>
             {healthInfo && (
-              <div className="health-box" style={{ marginTop: 8 }}>
+              <div className="health-box" style={{ marginTop: 10 }}>
                 <div><b>Cluster:</b> {healthInfo.cluster || '—'}</div>
                 <div><b>Database:</b> {healthInfo.database || '—'}</div>
                 <div><b>User:</b> {healthInfo.username || '—'}</div>
                 <div style={{ color: healthInfo.ok ? 'var(--earn)' : 'var(--bad)', fontWeight: 600, marginTop: 4 }}>
-                  {healthInfo.ok ? 'Connected ✓' : `Error: ${healthInfo.error || 'Server error'}`}
+                  {healthInfo.ok ? 'Connected ✓' : `Connection error: ${healthInfo.error || 'Server error'}`}
                 </div>
               </div>
             )}
@@ -749,7 +884,7 @@ function Reports({ d, car, drv, checkConnection, healthInfo, checkingHealth }) {
           ? <input type="number" value={val.year} onChange={(x) => setVal({ ...val, year: x.target.value })} />
           : <input type={p === 'day' ? 'date' : 'month'} value={val[p]} onChange={(x) => setVal({ ...val, [p]: x.target.value })} />}
       </div>
-      <div className="tot"><div><span className="mute">Earning</span><b className="earn"><Count v={E} /></b></div><div><span className="mute">Expense</span><b className="exp"><Count v={X} /></b></div><div><span className="mute">Net</span><b><Count v={E - X} /></b></div></div>
+      <div className="tot"><div><small className="mute">Earning</small><b className="earn"><Count v={E} /></b></div><div><small className="mute">Expense</small><b className="exp"><Count v={X} /></b></div><div><small className="mute">Net</small><b><Count v={E - X} /></b></div></div>
       <div className="row seg" style={{ marginBottom: 8 }}><button className={by === 'car' ? 'on' : ''} onClick={() => setBy('car')}>Car-wise</button><button className={by === 'driver' ? 'on' : ''} onClick={() => setBy('driver')}>Driver-wise</button></div>
       {rows.length === 0 && <p className="mute">Add a {by} first.</p>}
       {rows.map((r) => (
@@ -852,7 +987,7 @@ function Cal({ d, go }) {
             <button className="ghost" onClick={() => shift(1)}>›</button>
           </div>
         </div>
-        <div className="tot"><div><span className="mute">Present</span><b className="earn">{cnt('ok')}</b></div><div><span className="mute">Absent</span><b className="exp">{cnt('no') + cnt('zero')}</b></div><div><span className="mute">Received</span><b><Count v={tot} /></b></div></div>
+        <div className="tot"><div><small className="mute">Present</small><b className="earn">{cnt('ok')}</b></div><div><small className="mute">Absent</small><b className="exp">{cnt('no') + cnt('zero')}</b></div><div><small className="mute">Received</small><b><Count v={tot} /></b></div></div>
         <div className="card">
           <div className="cal">
             {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((w) => <i key={w} className="wd">{w}</i>)}

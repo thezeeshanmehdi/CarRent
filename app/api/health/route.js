@@ -2,11 +2,12 @@ import { NextResponse as N } from 'next/server';
 import { db, checkAuth, getSafeMongoInfo, sanitizeMongoError } from '../../../lib/db';
 
 export const dynamic = 'force-dynamic';
+const noStore = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' };
 
 export async function GET(req) {
   const isAuthed = await checkAuth(req);
   if (!isAuthed) {
-    return N.json({ error: 'unauthorized' }, { status: 401 });
+    return N.json({ error: 'unauthorized' }, { status: 401, headers: noStore });
   }
 
   const info = getSafeMongoInfo();
@@ -18,7 +19,7 @@ export async function GET(req) {
       database: info.dbName,
       cluster: info.host,
       username: info.username
-    });
+    }, { headers: noStore });
   } catch (err) {
     return N.json(
       {
@@ -28,8 +29,7 @@ export async function GET(req) {
         username: info.username,
         error: sanitizeMongoError(err)
       },
-      { status: 500 }
+      { status: 500, headers: noStore }
     );
   }
 }
-
