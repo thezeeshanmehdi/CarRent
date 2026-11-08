@@ -1,4 +1,4 @@
-const CACHE_NAME = 'carrent-v1';
+const CACHE_NAME = 'carrent-v4';
 const STATIC_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -6,6 +6,7 @@ const STATIC_ASSETS = [
   '/icon-512.png',
   '/icon-512-maskable.png',
   '/apple-touch-icon.png'
+  ,'/zee-technologies-logo-transparent.png'
 ];
 
 self.addEventListener('install', (event) => {

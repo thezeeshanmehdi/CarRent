@@ -446,16 +446,39 @@ export default function App() {
   const upsert = async (col, v) => { v._id ? await api('PUT', `${col}/${v._id}`, v) : await api('POST', col, v); setForm(null); load(); };
 
   if (locked) return (
-    <main><div className="card" style={{ marginTop: 40 }}>
-      <h3>Enter PIN</h3>
-      <form onSubmit={handleLogin}>
-        <div className="pw-wrap">
+    <main className="login-page">
+      <section className="login-shell">
+        <div className="login-visual" aria-hidden="true">
+          <span className="login-orb login-orb-one" />
+          <span className="login-orb login-orb-two" />
+          <div className="login-brand-mark">CR</div>
+          <div className="login-copy">
+            <span className="login-kicker">SMART FLEET LEDGER</span>
+            <h1>CarRent</h1>
+            <p>Har gaari. Har hisaab.<br />Aik mehfooz jagah.</p>
+          </div>
+          <div className="login-road">
+            <img src="/suzuki-alto-vxr-2026.svg" alt="" />
+            <span />
+          </div>
+        </div>
+
+        <div className="login-panel">
+          <div className="login-welcome">
+            <span className="login-lock"><Ico k="lock" /></span>
+            <div><span>Welcome back</span><h2>Unlock your logbook</h2></div>
+          </div>
+          <p className="login-helper">Apna PIN ya password enter karein.</p>
+          <form onSubmit={handleLogin}>
+            <label className="login-label" htmlFor="login-pin">Login PIN</label>
+            <div className="pw-wrap login-pin-wrap">
           <input
+            id="login-pin"
             ref={pinInputRef}
             name="pin"
             type={showLoginPw ? 'text' : 'password'}
             autoFocus
-            placeholder="PIN / password"
+            placeholder="Enter your PIN"
             autoComplete="current-password"
             disabled={loggingIn}
           />
@@ -467,18 +490,24 @@ export default function App() {
             {showLoginPw ? 'Hide' : 'Show'}
           </button>
         </div>
-        {err && <p className="abs" style={{ margin: '8px 0 0' }}>{err}</p>}
-        <button style={{ marginTop: 12, width: '100%' }} disabled={loggingIn}>
-          {loggingIn ? 'Checking…' : 'Open'}
+        {err && <p className="login-error" role="alert">{err}</p>}
+        <button className="login-submit" disabled={loggingIn}>
+          {loggingIn ? 'Checking…' : <>Open logbook <span aria-hidden="true">→</span></>}
         </button>
       </form>
 
       {deferredPrompt && (
-        <button className="ghost" style={{ marginTop: 10, width: '100%' }} onClick={handleInstallApp} aria-label="Install CarRent" title="Install CarRent">
-          📲 Install
+        <button className="login-install" onClick={handleInstallApp} aria-label="Install CarRent" title="Install CarRent">
+          <span aria-hidden="true">↓</span> Add CarRent to home screen
         </button>
       )}
-    </div></main>
+          <div className="developer-credit">
+            <span>Designed &amp; developed by</span>
+            <img src="/zee-technologies-logo-transparent.png" alt="Zee Technologies — Ideas into Solutions" />
+          </div>
+        </div>
+      </section>
+    </main>
   );
 
   const CARF = [['name', 'Car name'], ['number', 'Number plate'], ['make', 'Make'], ['model', 'Model'], ['year', 'Year', 'number'], ['color', 'Color'], ['chassis', 'Chassis no.'], ['engine', 'Engine no.'], ['purchaseDate', 'Purchase date', 'date'], ['cost', 'Car cost (Rs)', 'number'], ['startDate', 'Rent start date', 'date'], ['driverId', 'Current driver', 'select', drvOpts], ['regExpiry', 'Registration expiry', 'date'], ['insExpiry', 'Insurance expiry', 'date'], ['notes', 'Notes', 'textarea']];

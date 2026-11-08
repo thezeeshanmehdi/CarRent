@@ -1,8 +1,8 @@
 export default function manifest() {
   return {
-    name: 'CarRent',
+    name: 'CarRent by Zee Technologies',
     short_name: 'CarRent',
-    description: 'Rent car records, earning and expenses',
+    description: 'Smart car rental records, earnings and expense logbook',
     start_url: '/',
     scope: '/',
     display: 'standalone',
