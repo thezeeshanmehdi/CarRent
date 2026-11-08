@@ -1,5 +1,5 @@
 import { NextResponse as N } from 'next/server';
-import { db, bad, ObjectId, sanitizeMongoError } from '../../../../lib/db';
+import { db, bad, ObjectId, sanitizeMongoError, recomputeOilSummary } from '../../../../lib/db';
 
 export const dynamic = 'force-dynamic';
 const noStore = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' };
@@ -12,7 +12,14 @@ export async function PUT(req, { params }) {
   if (await bad(req, col)) return no();
   try {
     const { _id, ...b } = await req.json();
-    await (await db()).collection(col).updateOne({ _id: new ObjectId(id) }, { $set: b });
+    const database = await db();
+    const collection = database.collection(col);
+    const old = col === 'expenses' ? await collection.findOne({ _id: new ObjectId(id) }) : null;
+    await collection.updateOne({ _id: new ObjectId(id) }, { $set: b });
+    if (col === 'expenses' && (old?.category === 'Oil change' || b.category === 'Oil change')) {
+      await recomputeOilSummary(database, old?.carId);
+      if (b.carId !== old?.carId) await recomputeOilSummary(database, b.carId);
+    }
     return N.json({ ok: 1 }, { headers: noStore });
   } catch (e) { return fail(e); }
 }
@@ -21,7 +28,11 @@ export async function DELETE(req, { params }) {
   const { col, id } = await params;
   if (await bad(req, col)) return no();
   try {
-    await (await db()).collection(col).deleteOne({ _id: new ObjectId(id) });
+    const database = await db();
+    const collection = database.collection(col);
+    const old = col === 'expenses' ? await collection.findOne({ _id: new ObjectId(id) }) : null;
+    await collection.deleteOne({ _id: new ObjectId(id) });
+    if (old?.category === 'Oil change') await recomputeOilSummary(database, old.carId);
     return N.json({ ok: 1 }, { headers: noStore });
   } catch (e) { return fail(e); }
 }

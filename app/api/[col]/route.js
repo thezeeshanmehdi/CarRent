@@ -1,5 +1,5 @@
 import { NextResponse as N } from 'next/server';
-import { db, bad, sanitizeMongoError } from '../../../lib/db';
+import { db, bad, sanitizeMongoError, recomputeOilSummary } from '../../../lib/db';
 
 export const dynamic = 'force-dynamic';
 const noStore = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' };
@@ -21,7 +21,9 @@ export async function POST(req, { params }) {
   if (await bad(req, col)) return no();
   try {
     const { _id, ...b } = await req.json();
-    const r = await (await db()).collection(col).insertOne(b);
+    const database = await db();
+    const r = await database.collection(col).insertOne(b);
+    if (col === 'expenses' && b.category === 'Oil change') await recomputeOilSummary(database, b.carId);
     return N.json({ ...b, _id: r.insertedId }, { headers: noStore });
   } catch (e) { return fail(e); }
 }

@@ -5,6 +5,8 @@ import { generateDriverPdf, generateCarPdf, downloadOrSharePdf } from '../lib/pd
 const local = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
 const rs = (n) => 'Rs ' + Math.round(n || 0).toLocaleString('en-US');
 const days = (a, b) => { const o = []; for (let t = Date.parse(a); t <= Date.parse(b); t += 864e5) o.push(new Date(t).toISOString().slice(0, 10)); return o; };
+const OIL_INTERVAL_KM = 5000;
+const km = (n) => Number(n || 0).toLocaleString('en-US');
 
 const api = async (m, p, b) => {
   const r = await fetch('/api/' + p, {
@@ -35,7 +37,7 @@ function Count({ v, pre = 'Rs ' }) {
   return <>{pre}{Math.round(n).toLocaleString('en-US')}</>;
 }
 
-const P = { calendar: 'M4 7h16v13H4zM4 11h16M8 3v4M16 3v4', entry: 'M12 5v14M5 12h14', reports: 'M5 20V10M12 20V4M19 20v-7', cars: 'M5 16l1.5-5a2 2 0 011.9-1.4h7.2a2 2 0 011.9 1.4L19 16M4 16h16v3H4zM7 19v1.5M17 19v1.5', drivers: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0' };
+const P = { calendar: 'M4 7h16v13H4zM4 11h16M8 3v4M16 3v4', entry: 'M12 5v14M5 12h14', reports: 'M5 20V10M12 20V4M19 20v-7', cars: 'M5 16l1.5-5a2 2 0 011.9-1.4h7.2a2 2 0 011.9 1.4L19 16M4 16h16v3H4zM7 19v1.5M17 19v1.5', drivers: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0', more: 'M6 12h.01M12 12h.01M18 12h.01', oil: 'M8 3h8l1 5-5 13-5-13z', lock: 'M6 11h12v10H6zM8 11V7a4 4 0 018 0v4', pin: 'M12 15v2M8 11V8a4 4 0 018 0v3M6 11h12v10H6z' };
 const Ico = ({ k }) => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={P[k]} /></svg>;
 
 function getPinStrength(p) {
@@ -225,7 +227,7 @@ function ChangePinModal({ onClose }) {
 }
 
 export default function App() {
-  const [tab, setTab] = useState('entry');
+  const [tab, setTab] = useState('reports');
   const [d, setD] = useState({ cars: [], drivers: [], entries: [], expenses: [] });
   const [locked, setLocked] = useState(false);
   const [form, setForm] = useState(null);
@@ -233,12 +235,14 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [pre, setPre] = useState(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreView, setMoreView] = useState(null);
+  const [previousTab, setPreviousTab] = useState('reports');
 
   // Health and PWA states
   const [healthInfo, setHealthInfo] = useState(null);
-  const [checkingHealth, setCheckingHealth] = useState(false);
+  const [checkingHealth, setCheckingHealth] = useState(true);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [isIos, setIsIos] = useState(false);
   const [showLoginPw, setShowLoginPw] = useState(false);
   const [loggingIn, setLoggingIn] = useState(false);
   const pinInputRef = useRef(null);
@@ -260,16 +264,6 @@ export default function App() {
     window.addEventListener('beforeinstallprompt', installHandler);
     window.addEventListener('appinstalled', () => setDeferredPrompt(null));
 
-    // iOS Safari detection
-    if (typeof window !== 'undefined') {
-      const ua = window.navigator.userAgent.toLowerCase();
-      const isIosDevice = /iphone|ipad|ipod/.test(ua);
-      const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
-      if (isIosDevice && !isStandalone) {
-        setIsIos(true);
-      }
-    }
-
     return () => {
       window.removeEventListener('beforeinstallprompt', installHandler);
     };
@@ -288,10 +282,10 @@ export default function App() {
     setCheckingHealth(true);
     try {
       const res = await fetch('/api/health', { credentials: 'same-origin', cache: 'no-store' });
-      const data = await res.json().catch(() => ({}));
-      setHealthInfo(data);
-    } catch (e) {
-      setHealthInfo({ ok: false, error: e.message || 'Network error' });
+      const data = await res.json().catch(() => ({ ok: false }));
+      setHealthInfo({ ok: res.ok && data.ok === true });
+    } catch {
+      setHealthInfo({ ok: false });
     } finally {
       setCheckingHealth(false);
     }
@@ -314,7 +308,7 @@ export default function App() {
         if (e.message === 'auth') {
           setLocked(true);
         } else {
-          setErr(e.message || 'Failed to load data');
+          setErr('Could not load your records. Please try again.');
         }
       }
     } finally {
@@ -325,6 +319,14 @@ export default function App() {
   };
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (locked) return;
+    checkConnection();
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') checkConnection(); }, 60000);
+    const visible = () => { if (document.visibilityState === 'visible') checkConnection(); };
+    document.addEventListener('visibilitychange', visible);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', visible); };
+  }, [locked]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -347,7 +349,11 @@ export default function App() {
         // Unlock immediately on successful login
         setLocked(false);
         setErr('');
+        setTab('reports');
+        setMoreOpen(false);
+        setMoreView(null);
         load();
+        checkConnection();
       } else {
         if (r.status === 429) {
           setErr(data.error || 'Too many attempts. Locked for 15 minutes.');
@@ -369,6 +375,9 @@ export default function App() {
   const handleLock = async () => {
     await fetch('/api/login', { method: 'DELETE', credentials: 'same-origin', cache: 'no-store' });
     setLocked(true);
+    setTab('reports');
+    setMoreOpen(false);
+    setMoreView(null);
     setD({ cars: [], drivers: [], entries: [], expenses: [] });
   };
 
@@ -379,7 +388,7 @@ export default function App() {
   const t0 = local();
   const todayE = d.entries.filter((e) => e.date === t0).reduce((a, e) => a + e.earning, 0);
   const monNet = d.entries.filter((e) => e.date.slice(0, 7) === t0.slice(0, 7)).reduce((a, e) => a + e.earning, 0) - d.expenses.filter((e) => e.date.slice(0, 7) === t0.slice(0, 7)).reduce((a, e) => a + e.amount, 0);
-  const del = async (col, id) => { if (confirm('Delete this record?')) { await api('DELETE', `${col}/${id}`); load(); } };
+  const del = async (col, id, message = 'Delete this record?') => { if (confirm(message)) { await api('DELETE', `${col}/${id}`); load(); } };
   const upsert = async (col, v) => { v._id ? await api('PUT', `${col}/${v._id}`, v) : await api('POST', col, v); setForm(null); load(); };
 
   if (locked) return (
@@ -411,29 +420,9 @@ export default function App() {
       </form>
 
       {deferredPrompt && (
-        <button className="ghost" style={{ marginTop: 10, width: '100%' }} onClick={handleInstallApp}>
-          📲 Install CarRent App
+        <button className="ghost" style={{ marginTop: 10, width: '100%' }} onClick={handleInstallApp} aria-label="Install CarRent" title="Install CarRent">
+          📲 Install
         </button>
-      )}
-      {isIos && <div className="pwa-hint">📲 Tap Share, then Add to Home Screen</div>}
-
-      {err && (
-        <div style={{ marginTop: 14, textAlign: 'center' }}>
-          <button type="button" className="ghost" style={{ fontSize: 12, padding: '7px 12px' }} onClick={checkConnection} disabled={checkingHealth}>
-            {checkingHealth ? 'Checking…' : 'Check connection'}
-          </button>
-        </div>
-      )}
-
-      {healthInfo && (
-        <div className="health-box" style={{ marginTop: 10 }}>
-          <div><b>Cluster:</b> {healthInfo.cluster || '—'}</div>
-          <div><b>Database:</b> {healthInfo.database || '—'}</div>
-          <div><b>User:</b> {healthInfo.username || '—'}</div>
-          <div style={{ color: healthInfo.ok ? 'var(--earn)' : 'var(--bad)', fontWeight: 600, marginTop: 4 }}>
-            {healthInfo.ok ? 'Connected ✓' : `Connection error: ${healthInfo.error || 'Server error'}`}
-          </div>
-        </div>
       )}
     </div></main>
   );
@@ -444,19 +433,19 @@ export default function App() {
   return (
     <>
       <header className="hero">
-        {/* Top toolbar row holding PIN, Lock, and Install buttons */}
+        {/* Compact status toolbar */}
         <div className="hero-top-toolbar">
           {deferredPrompt && (
-            <button className="hero-btn" onClick={handleInstallApp} title="Install as Web App">
-              📲 Install
+            <button className="hero-btn install-btn" onClick={handleInstallApp} title="Install CarRent" aria-label="Install CarRent">
+              📲
             </button>
           )}
-          <button className="hero-btn" onClick={() => setPinSheet(true)} title="Change PIN">
-            PIN
-          </button>
-          <button className="hero-btn" onClick={handleLock} title="Lock Application">
-            Lock
-          </button>
+          <button
+            className={`health-dot ${checkingHealth || healthInfo === null ? 'checking' : healthInfo.ok ? 'connected' : 'disconnected'}`}
+            onClick={() => { if (!checkingHealth && healthInfo?.ok === false) checkConnection(); }}
+            aria-label={checkingHealth || healthInfo === null ? 'Checking' : healthInfo.ok ? 'Connected' : 'Not connected'}
+            title={checkingHealth || healthInfo === null ? 'Checking' : healthInfo.ok ? 'Connected' : 'Not connected'}
+          />
         </div>
 
         {/* Stats row with responsive flex-wrap & clamp sizes */}
@@ -479,7 +468,8 @@ export default function App() {
             <span className="wline wline-3" />
           </div>
 
-          <svg className="car" viewBox="0 0 140 56" aria-hidden="true">
+          <img className="car" src="/suzuki-alto-vxr-2026.svg" alt="White Suzuki Alto VXR 2026 driving right" />
+          <svg className="legacy-car" viewBox="0 0 140 56" aria-hidden="true">
             <defs>
               <linearGradient id="altoGlass" x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="#9fd3dc" />
@@ -575,47 +565,33 @@ export default function App() {
         </div>
       </header>
 
-      <main key={tab}>
+      <main key={`${tab}-${moreView || ''}`}>
         {loading && <p className="mute">Loading…</p>}
         {err && (
           <div className="card" style={{ background: '#fff5f5', border: '1.5px solid #f6c9cb' }}>
-            <p className="abs" style={{ margin: 0 }}>{err}</p>
+            <p className="abs" style={{ margin: 0 }}>Could not load your records.</p>
             <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button style={{ fontSize: 13, padding: '7px 14px' }} onClick={load} disabled={loading}>
                 {loading ? 'Retrying…' : 'Retry'}
               </button>
-              <button className="ghost" style={{ fontSize: 13, padding: '7px 14px' }} onClick={checkConnection} disabled={checkingHealth}>
-                {checkingHealth ? 'Checking…' : 'Check connection'}
-              </button>
             </div>
-            {healthInfo && (
-              <div className="health-box" style={{ marginTop: 10 }}>
-                <div><b>Cluster:</b> {healthInfo.cluster || '—'}</div>
-                <div><b>Database:</b> {healthInfo.database || '—'}</div>
-                <div><b>User:</b> {healthInfo.username || '—'}</div>
-                <div style={{ color: healthInfo.ok ? 'var(--earn)' : 'var(--bad)', fontWeight: 600, marginTop: 4 }}>
-                  {healthInfo.ok ? 'Connected ✓' : `Connection error: ${healthInfo.error || 'Server error'}`}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
-        {isIos && <div className="pwa-hint">📲 Tap Share, then Add to Home Screen to install</div>}
-
-        {tab === 'entry' && <Entry {...{ d, car, drv, carOpts, drvOpts, load, del, pre }} />}
-        {tab === 'calendar' && <Cal d={d} go={(x) => { setPre(x); setTab('entry'); }} />}
-        {tab === 'reports' && <Reports {...{ d, car, drv, checkConnection, healthInfo, checkingHealth }} />}
-        {tab === 'cars' && <>
+        {moreView && <button className="back-btn ghost" onClick={() => { setMoreView(null); setTab(previousTab); }}>‹ Back</button>}
+        {moreView === 'calendar' && <Cal d={d} go={(x) => { setPre(x); setMoreView(null); setTab('entry'); }} />}
+        {moreView === 'oil' && <OilHistory d={d} load={load} del={del} add={(carId) => { setPre({ mode: 'expense', category: 'Oil change', carId }); setMoreView(null); setTab('entry'); }} />}
+        {!moreView && tab === 'entry' && <Entry {...{ d, car, drv, carOpts, drvOpts, load, del, pre }} />}
+        {!moreView && tab === 'reports' && <Reports {...{ d, car, drv }} />}
+        {!moreView && tab === 'cars' && <>
           <button style={{ width: '100%', marginBottom: 10 }} onClick={() => setForm({ col: 'cars', init: {}, title: 'New car' })}>+ Add car</button>
           {d.cars.length === 0 && <p className="mute">No cars yet. Add your first car.</p>}
           {d.cars.map((c) => {
             const earn = d.entries.filter((e) => e.carId === c._id).reduce((s, e) => s + e.earning, 0);
             const exp = d.expenses.filter((e) => e.carId === c._id).reduce((s, e) => s + e.amount, 0);
-            const carOils = d.expenses
+            const lastOil = c.lastOilReading != null ? { date: c.lastOilDate, odometer: c.lastOilReading, nextDue: c.nextOilDue } : d.expenses
               .filter((e) => e.carId === c._id && e.category === 'Oil change' && e.odometer != null)
-              .sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : (b.odometer || 0) - (a.odometer || 0)));
-            const lastOil = carOils[0];
+              .sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : String(b._id).localeCompare(String(a._id))))[0];
             return (
               <div className="card" key={c._id}>
                 <div className="between"><div className="who"><i className="av">{(c.name || '?')[0]}</i><b>{c.name}<br /><span className="mute">{c.number}</span></b></div>
@@ -624,8 +600,9 @@ export default function App() {
                 <div className="mute">Cost {rs(c.cost)} · Earned {rs(earn)} · Expense {rs(exp)}</div>
                 {lastOil && (
                   <div className="mute">
-                    Last oil change: {lastOil.date} at {Number(lastOil.odometer).toLocaleString('en-US')} km
-                    {lastOil.nextDue ? ` · Next due: ${Number(lastOil.nextDue).toLocaleString('en-US')} km` : ''}
+                    Last oil change: {lastOil.date} at {km(lastOil.odometer)} km
+                    {lastOil.nextDue ? ` · Next due: ${km(lastOil.nextDue)} km` : ''}<br />
+                    Last known reading: {km(lastOil.odometer)} km
                   </div>
                 )}
                 {c.cost > 0 && <><div className="earn">Recovered {Math.max(0, Math.round(((earn - exp) / c.cost) * 100))}% of cost</div><div className="bar"><span style={{ width: Math.min(100, Math.max(2, Math.round(((earn - exp) / c.cost) * 100))) + '%' }} /></div></>}
@@ -633,7 +610,7 @@ export default function App() {
             );
           })}
         </>}
-        {tab === 'drivers' && <>
+        {!moreView && tab === 'drivers' && <>
           <button style={{ width: '100%', marginBottom: 10 }} onClick={() => setForm({ col: 'drivers', init: {}, title: 'New driver' })}>+ Add driver</button>
           {d.drivers.length === 0 && <p className="mute">No drivers yet. Add your first driver.</p>}
           {d.drivers.map((c) => (
@@ -648,16 +625,17 @@ export default function App() {
       </main>
 
       {form && <Form title={form.title} init={form.init} fields={form.col === 'cars' ? CARF : DRVF} onCancel={() => setForm(null)} onSave={(v) => upsert(form.col, v)} />}
-      {pinSheet && <ChangePinModal onClose={() => setPinSheet(false)} />}
-      <nav>{[['entry', 'Entry'], ['calendar', 'Calendar'], ['reports', 'Reports'], ['cars', 'Cars'], ['drivers', 'Drivers']].map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => { setPre(null); setTab(k); }}><Ico k={k} />{l}</button>)}</nav>
+      {pinSheet && <ChangePinModal onClose={() => { setPinSheet(false); setMoreView(null); setTab(previousTab); }} />}
+      {moreOpen && <MoreSheet onClose={() => setMoreOpen(false)} openView={(view) => { setMoreOpen(false); setMoreView(view); }} changePin={() => { setMoreOpen(false); setMoreView('pin'); setPinSheet(true); }} lock={handleLock} />}
+      <nav>{[['entry', 'Entry'], ['cars', 'Cars'], ['reports', 'Reports'], ['drivers', 'Drivers'], ['more', 'More']].map(([k, l]) => <button key={k} className={(k === 'more' ? moreOpen || !!moreView : !moreOpen && !moreView && tab === k) ? 'on' : ''} onClick={() => { if (k === 'more') { setPreviousTab(tab); setMoreOpen(true); } else { setMoreOpen(false); setMoreView(null); setPre(null); setTab(k); } }}><Ico k={k} />{l}</button>)}</nav>
     </>
   );
 }
 
 function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
-  const [mode, setMode] = useState('earning');
+  const [mode, setMode] = useState(pre?.mode || 'earning');
   const [date, setDate] = useState(pre?.date || local());
-  const [v, setV] = useState({ carId: pre?.carId, driverId: pre?.driverId, category: 'Fuel' });
+  const [v, setV] = useState({ carId: pre?.carId, driverId: pre?.driverId, category: pre?.category || 'Fuel' });
   const [ok, setOk] = useState(false);
   const set = (k) => (e) => setV({ ...v, [k]: e.target.value });
   const dayE = d.entries.filter((e) => e.date === date);
@@ -674,7 +652,7 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
   }, [d.expenses, v.carId, isOil, date]);
 
   const curOdoNum = v.odometer !== undefined && v.odometer !== '' ? Number(v.odometer) : null;
-  const isOdoInvalid = isOil && prevOil && curOdoNum !== null && !isNaN(curOdoNum) && curOdoNum < prevOil.odometer;
+  const isOdoInvalid = isOil && prevOil && curOdoNum !== null && !isNaN(curOdoNum) && curOdoNum < Number(prevOil.odometer);
   const kmRun = isOil && prevOil && curOdoNum !== null && !isNaN(curOdoNum) && curOdoNum >= prevOil.odometer ? curOdoNum - prevOil.odometer : null;
 
   const save = async () => {
@@ -690,7 +668,7 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
         }
         const curOdo = Number(v.odometer);
         if (prevOil && curOdo < prevOil.odometer) {
-          return alert(`Current reading (${curOdo} km) must be greater than or equal to previous reading (${prevOil.odometer} km)`);
+          return alert('Reading cannot be lower than the last oil change reading');
         }
       }
       const expBody = {
@@ -705,7 +683,7 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
         if (v.nextDue !== undefined && v.nextDue !== '') {
           expBody.nextDue = Number(v.nextDue);
         } else {
-          expBody.nextDue = Number(v.odometer) + 5000;
+          expBody.nextDue = Number(v.odometer) + OIL_INTERVAL_KM;
         }
       }
       await api('POST', 'expenses', expBody);
@@ -730,31 +708,29 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
           : <label>Category<select value={v.category || 'Fuel'} onChange={set('category')}>{CATS.map(([a, b]) => <option key={a}>{b}</option>)}</select></label>}
 
         {isOil && v.carId && (
-          <div className="card" style={{ background: '#f0f7f9', border: '1px solid var(--line)', padding: 12, margin: '6px 0 12px' }}>
+          <div className="oil-info">
             {prevOil ? (
               <>
-                <div style={{ fontSize: 13, color: 'var(--ink)' }}>
-                  Previous oil change: <b>{prevOil.date}</b>, <b>{Number(prevOil.odometer).toLocaleString('en-US')} km</b>
-                </div>
-                {kmRun !== null && (
-                  <div style={{ color: 'var(--earn)', fontWeight: 600, fontSize: 13, marginTop: 4 }}>
-                    Car ran {kmRun.toLocaleString('en-US')} km on the last oil
-                  </div>
-                )}
-                {isOdoInvalid && (
-                  <div className="abs" style={{ fontSize: 13, marginTop: 4 }}>
-                    Current reading must be ≥ previous reading ({Number(prevOil.odometer).toLocaleString('en-US')} km)
-                  </div>
-                )}
+                <div>Last oil change: <b>{prevOil.date}</b> at <b>{km(prevOil.odometer)} km</b></div>
+                <div>Expected next oil change at <b>{km(Number(prevOil.odometer) + OIL_INTERVAL_KM)} km</b> ({km(OIL_INTERVAL_KM)} km interval)</div>
               </>
             ) : (
-              <div className="mute" style={{ fontSize: 13 }}>First oil change recorded for this car</div>
+              <div>First oil change for this car</div>
             )}
           </div>
         )}
 
         {isOil && (
           <>
+            {curOdoNum !== null && prevOil && (
+              <div className={`oil-status ${isOdoInvalid ? 'bad' : kmRun > OIL_INTERVAL_KM ? 'warn' : 'good'}`}>
+                {isOdoInvalid
+                  ? 'Reading cannot be lower than the last oil change reading'
+                  : kmRun > OIL_INTERVAL_KM
+                    ? `Car ran ${km(kmRun)} km on the last oil (${km(kmRun - OIL_INTERVAL_KM)} km over the ${km(OIL_INTERVAL_KM)} km limit)`
+                    : `Car ran ${km(kmRun)} km on the last oil (${km(OIL_INTERVAL_KM - kmRun)} km before the ${km(OIL_INTERVAL_KM)} km limit)`}
+              </div>
+            )}
             <label>Car meter reading at oil change (km) *
               <input
                 type="number"
@@ -767,7 +743,7 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
                   setV((old) => ({
                     ...old,
                     odometer: val,
-                    nextDue: val !== '' && !isNaN(num) ? String(num + 5000) : old.nextDue || ''
+                    nextDue: val !== '' && !isNaN(num) ? String(num + OIL_INTERVAL_KM) : old.nextDue || ''
                   }));
                 }}
               />
@@ -786,7 +762,6 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
 
         <label>{mode === 'earning' ? 'Rent received (Rs)' : 'Amount (Rs)'}<input type="number" inputMode="decimal" value={v.amount ?? ''} onChange={set('amount')} /></label>
         <label>Note<input value={v.note || ''} onChange={set('note')} /></label>
-        {isOdoInvalid && <p className="abs" style={{ margin: '0 0 10px 0' }}>Current meter reading cannot be lower than previous reading ({prevOil.odometer} km).</p>}
         <button
           className={'cta' + (ok ? ' ok' : '')}
           disabled={isOdoInvalid}
@@ -816,7 +791,52 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
   );
 }
 
-function Reports({ d, car, drv, checkConnection, healthInfo, checkingHealth }) {
+function MoreSheet({ onClose, openView, changePin, lock }) {
+  const rows = [
+    ['calendar', 'Calendar', () => openView('calendar')],
+    ['oil', 'Oil change history', () => openView('oil')],
+    ['pin', 'Change PIN', changePin],
+    ['lock', 'Lock', lock]
+  ];
+  return <div className="sheet more-sheet" onClick={onClose}><div className="card" onClick={(e) => e.stopPropagation()}>
+    <div className="between"><h3>More</h3><button className="ghost close-more" onClick={onClose} aria-label="Close">×</button></div>
+    <div className="more-list">{rows.map(([icon, label, action]) => <button key={label} className="more-row" onClick={action}><Ico k={icon} /><span>{label}</span><b>›</b></button>)}</div>
+  </div></div>;
+}
+
+function OilHistory({ d, del, add }) {
+  const [carId, setCarId] = useState(d.cars[0]?._id || '');
+  const oils = d.expenses
+    .filter((e) => e.carId === carId && e.category === 'Oil change' && e.odometer != null)
+    .sort((a, b) => b.date.localeCompare(a.date) || String(b._id).localeCompare(String(a._id)));
+  const chronological = [...oils].reverse();
+  const previousById = new Map(chronological.map((item, i) => [item._id, i ? Number(chronological[i - 1].odometer) : null]));
+  const selectedCar = d.cars.find((c) => c._id === carId);
+  const latest = oils[0];
+  const lastReading = selectedCar?.lastOilReading ?? latest?.odometer;
+  const nextDue = selectedCar?.nextOilDue ?? latest?.nextDue ?? (lastReading != null ? Number(lastReading) + OIL_INTERVAL_KM : null);
+  return <>
+    <div className="card">
+      <label>Car<select value={carId} onChange={(e) => setCarId(e.target.value)}><option value="">Select car</option>{d.cars.map((c) => <option key={c._id} value={c._id}>{c.name} {c.number || ''}</option>)}</select></label>
+      <button className="cta" disabled={!carId} onClick={() => add(carId)}>+ Add oil change</button>
+    </div>
+    {carId && <div className="tot oil-summary"><div><small className="mute">Last reading</small><b>{lastReading != null ? `${km(lastReading)} km` : '—'}</b></div><div><small className="mute">Next due</small><b>{nextDue != null ? `${km(nextDue)} km` : '—'}</b></div><div><small className="mute">Oil changes</small><b>{oils.length}</b></div></div>}
+    {carId && oils.length === 0 && <div className="card mute">No oil change recorded for this car</div>}
+    {oils.map((item) => {
+      const previous = previousById.get(item._id);
+      const ran = previous == null ? null : Number(item.odometer) - previous;
+      return <div className="card oil-history-item" key={item._id}>
+        <div className="between"><b>{item.date}</b><span className="exp">{rs(item.amount)}</span></div>
+        <div className="mute">Meter reading: {km(item.odometer)} km</div>
+        {ran != null && <div className={ran > OIL_INTERVAL_KM ? 'oil-run warn' : ran >= 0 ? 'oil-run good' : 'oil-run bad'}>Ran {km(ran)} km on this oil{ran > OIL_INTERVAL_KM ? ` · ${km(ran - OIL_INTERVAL_KM)} km over limit` : ran >= 0 ? ` · ${km(OIL_INTERVAL_KM - ran)} km before limit` : ''}</div>}
+        {item.note && <div className="mute">{item.note}</div>}
+        <button className="del oil-delete" onClick={() => del('expenses', item._id, 'Delete this oil change record?')}>Delete</button>
+      </div>;
+    })}
+  </>;
+}
+
+function Reports({ d, car, drv }) {
   const [p, setP] = useState('month');
   const [val, setVal] = useState({ day: local(), month: local().slice(0, 7), year: local().slice(0, 4) });
   const [by, setBy] = useState('car');
@@ -923,27 +943,6 @@ function Reports({ d, car, drv, checkConnection, healthInfo, checkingHealth }) {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: 14 }}>
-        <div className="between">
-          <div>
-            <b>System Connection</b>
-            <div className="mute" style={{ fontSize: 12 }}>Verify MongoDB Atlas connection status</div>
-          </div>
-          <button className="ghost" style={{ fontSize: 12, padding: '7px 12px' }} onClick={checkConnection} disabled={checkingHealth}>
-            {checkingHealth ? 'Checking…' : 'Check connection'}
-          </button>
-        </div>
-        {healthInfo && (
-          <div className="health-box" style={{ marginTop: 10 }}>
-            <div><b>Cluster:</b> {healthInfo.cluster || '—'}</div>
-            <div><b>Database:</b> {healthInfo.database || '—'}</div>
-            <div><b>User:</b> {healthInfo.username || '—'}</div>
-            <div style={{ color: healthInfo.ok ? 'var(--earn)' : 'var(--bad)', fontWeight: 600, marginTop: 4 }}>
-              {healthInfo.ok ? 'Connected ✓' : `Error: ${healthInfo.error || 'Server error'}`}
-            </div>
-          </div>
-        )}
-      </div>
     </>
   );
 }
