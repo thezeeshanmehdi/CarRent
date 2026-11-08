@@ -15,7 +15,9 @@ export async function PUT(req, { params }) {
     const database = await db();
     const collection = database.collection(col);
     const old = col === 'expenses' ? await collection.findOne({ _id: new ObjectId(id) }) : null;
-    await collection.updateOne({ _id: new ObjectId(id) }, { $set: b });
+    const update = { $set: b };
+    if (col === 'expenses' && b.category && b.category !== 'Oil change') update.$unset = { odometer: '', nextDue: '' };
+    await collection.updateOne({ _id: new ObjectId(id) }, update);
     if (col === 'expenses' && (old?.category === 'Oil change' || b.category === 'Oil change')) {
       await recomputeOilSummary(database, old?.carId);
       if (b.carId !== old?.carId) await recomputeOilSummary(database, b.carId);

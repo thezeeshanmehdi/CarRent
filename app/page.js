@@ -75,6 +75,59 @@ function Form({ fields, init, onSave, onCancel, title }) {
   );
 }
 
+function RecordEditor({ record, col, d, onClose, onSaved }) {
+  const expense = col === 'expenses';
+  const [v, setV] = useState({ ...record });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const set = (key) => (e) => setV((old) => ({ ...old, [key]: e.target.value }));
+  const isOil = expense && v.category === 'Oil change';
+  const previousOil = isOil ? d.expenses
+    .filter((x) => x._id !== record._id && x.carId === v.carId && x.category === 'Oil change' && x.odometer != null && x.date <= v.date)
+    .sort((a, b) => b.date.localeCompare(a.date) || String(b._id).localeCompare(String(a._id)))[0] : null;
+  const readingInvalid = isOil && previousOil && v.odometer !== '' && Number(v.odometer) < Number(previousOil.odometer);
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (!v.carId) return setError('Please select a car');
+    if (readingInvalid) return setError('Reading cannot be lower than the previous oil change reading');
+    if (isOil && (v.odometer === '' || !Number.isFinite(Number(v.odometer)))) return setError('Meter reading is required');
+    setSaving(true);
+    setError('');
+    try {
+      const body = expense
+        ? { carId: v.carId, date: v.date, category: v.category || 'Other', amount: Number(v.amount) || 0, note: v.note || '', ...(isOil ? { odometer: Number(v.odometer), nextDue: Number(v.nextDue) || Number(v.odometer) + OIL_INTERVAL_KM } : {}) }
+        : { carId: v.carId, driverId: v.driverId || '', date: v.date, earning: Number(v.earning) || 0, note: v.note || '' };
+      await api('PUT', `${col}/${record._id}`, body);
+      await onSaved();
+      onClose();
+    } catch {
+      setError('Could not update this record. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <div className="sheet"><div className="card"><form onSubmit={save}>
+    <h3 style={{ marginTop: 0 }}>Edit {expense ? 'expense' : 'earning'}</h3>
+    <label>Date<input type="date" required value={v.date || ''} onChange={set('date')} /></label>
+    <label>Car<select required value={v.carId || ''} onChange={set('carId')}><option value="">Select car</option>{d.cars.map((c) => <option key={c._id} value={c._id}>{c.name} {c.number || ''}</option>)}</select></label>
+    {expense
+      ? <label>Category<select value={v.category || 'Other'} onChange={set('category')}>{CATS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+      : <label>Driver<select value={v.driverId || ''} onChange={set('driverId')}><option value="">Select driver</option>{d.drivers.map((driver) => <option key={driver._id} value={driver._id}>{driver.name}</option>)}</select></label>}
+    {isOil && <>
+      {previousOil && <div className="oil-info">Previous oil change: <b>{previousOil.date}</b> at <b>{km(previousOil.odometer)} km</b></div>}
+      {readingInvalid && <div className="oil-status bad">Reading cannot be lower than the previous oil change reading</div>}
+      <label>Car meter reading at oil change (km)<input type="number" required inputMode="decimal" value={v.odometer ?? ''} onChange={(e) => { const value = e.target.value; setV((old) => ({ ...old, odometer: value, nextDue: value === '' ? old.nextDue : String(Number(value) + OIL_INTERVAL_KM) })); }} /></label>
+      <label>Next oil change due at (km)<input type="number" inputMode="decimal" value={v.nextDue ?? ''} onChange={set('nextDue')} /></label>
+    </>}
+    <label>{expense ? 'Amount (Rs)' : 'Rent received (Rs)'}<input type="number" inputMode="decimal" value={expense ? v.amount ?? '' : v.earning ?? ''} onChange={set(expense ? 'amount' : 'earning')} /></label>
+    <label>Note<input value={v.note || ''} onChange={set('note')} /></label>
+    {error && <p className="abs">{error}</p>}
+    <div className="row"><button type="button" className="ghost" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" disabled={saving || readingInvalid}>{saving ? 'Saving…' : 'Save changes'}</button></div>
+  </form></div></div>;
+}
+
 function ChangePinModal({ onClose }) {
   const [oldPin, setOldPin] = useState('');
   const [newPin, setNewPin] = useState('');
@@ -231,6 +284,7 @@ export default function App() {
   const [d, setD] = useState({ cars: [], drivers: [], entries: [], expenses: [] });
   const [locked, setLocked] = useState(false);
   const [form, setForm] = useState(null);
+  const [recordEditor, setRecordEditor] = useState(null);
   const [pinSheet, setPinSheet] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -580,8 +634,8 @@ export default function App() {
 
         {moreView && <button className="back-btn ghost" onClick={() => { setMoreView(null); setTab(previousTab); }}>‹ Back</button>}
         {moreView === 'calendar' && <Cal d={d} go={(x) => { setPre(x); setMoreView(null); setTab('entry'); }} />}
-        {moreView === 'oil' && <OilHistory d={d} load={load} del={del} add={(carId) => { setPre({ mode: 'expense', category: 'Oil change', carId }); setMoreView(null); setTab('entry'); }} />}
-        {!moreView && tab === 'entry' && <Entry {...{ d, car, drv, carOpts, drvOpts, load, del, pre }} />}
+        {moreView === 'oil' && <OilHistory d={d} load={load} del={del} edit={(record) => setRecordEditor({ col: 'expenses', record })} add={(carId) => { setPre({ mode: 'expense', category: 'Oil change', carId }); setMoreView(null); setTab('entry'); }} />}
+        {!moreView && tab === 'entry' && <Entry {...{ d, car, drv, carOpts, drvOpts, load, del, pre }} edit={(col, record) => setRecordEditor({ col, record })} />}
         {!moreView && tab === 'reports' && <Reports {...{ d, car, drv }} />}
         {!moreView && tab === 'cars' && <>
           <button style={{ width: '100%', marginBottom: 10 }} onClick={() => setForm({ col: 'cars', init: {}, title: 'New car' })}>+ Add car</button>
@@ -625,6 +679,7 @@ export default function App() {
       </main>
 
       {form && <Form title={form.title} init={form.init} fields={form.col === 'cars' ? CARF : DRVF} onCancel={() => setForm(null)} onSave={(v) => upsert(form.col, v)} />}
+      {recordEditor && <RecordEditor col={recordEditor.col} record={recordEditor.record} d={d} onClose={() => setRecordEditor(null)} onSaved={load} />}
       {pinSheet && <ChangePinModal onClose={() => { setPinSheet(false); setMoreView(null); setTab(previousTab); }} />}
       {moreOpen && <MoreSheet onClose={() => setMoreOpen(false)} openView={(view) => { setMoreOpen(false); setMoreView(view); }} changePin={() => { setMoreOpen(false); setMoreView('pin'); setPinSheet(true); }} lock={handleLock} />}
       <nav>{[['reports', 'Reports'], ['cars', 'Cars'], ['entry', 'Entry'], ['drivers', 'Drivers'], ['more', 'More']].map(([k, l]) => <button key={k} className={(k === 'more' ? moreOpen || !!moreView : !moreOpen && !moreView && tab === k) ? 'on' : ''} onClick={() => { if (k === 'more') { setPreviousTab(tab); setMoreOpen(true); } else { setMoreOpen(false); setMoreView(null); setPre(null); setTab(k); } }}><Ico k={k} />{l}</button>)}</nav>
@@ -632,7 +687,7 @@ export default function App() {
   );
 }
 
-function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
+function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre, edit }) {
   const [mode, setMode] = useState(pre?.mode || 'earning');
   const [date, setDate] = useState(pre?.date || local());
   const [v, setV] = useState({ carId: pre?.carId, driverId: pre?.driverId, category: pre?.category || 'Fuel' });
@@ -773,7 +828,7 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
       </div>
       {absent.length > 0 && <div className="card"><b className="abs">No record on {date}</b>
         <div className="chips">{absent.map((c) => <button key={c._id} className="chip" onClick={() => { setMode('earning'); setV({ ...v, carId: c._id }); }}>{c.name}</button>)}</div></div>}
-      {dayE.map((e) => <div className="card between" key={e._id}><span><b>{car(e.carId)}</b> <span className="mute">{drv(e.driverId)}</span></span><span><span className="earn">{rs(e.earning)}</span> <button className="del" onClick={() => del('entries', e._id)}>×</button></span></div>)}
+      {dayE.map((e) => <div className="card between" key={e._id}><span><b>{car(e.carId)}</b> <span className="mute">{drv(e.driverId)}{e.note ? ` · ${e.note}` : ''}</span></span><span className="record-actions"><span className="earn">{rs(e.earning)}</span><button className="ghost record-edit" onClick={() => edit('entries', e)}>Edit</button><button className="del" onClick={() => del('entries', e._id, 'Delete this earning record?')}>Delete</button></span></div>)}
       {d.expenses.filter((e) => e.date === date).map((e) => (
         <div className="card between" key={e._id}>
           <span>
@@ -783,7 +838,7 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
             </span>
           </span>
           <span>
-            <span className="exp">{rs(e.amount)}</span> <button className="del" onClick={() => del('expenses', e._id)}>×</button>
+            <span className="record-actions"><span className="exp">{rs(e.amount)}</span><button className="ghost record-edit" onClick={() => edit('expenses', e)}>Edit</button><button className="del" onClick={() => del('expenses', e._id, 'Delete this expense record?')}>Delete</button></span>
           </span>
         </div>
       ))}
@@ -804,7 +859,7 @@ function MoreSheet({ onClose, openView, changePin, lock }) {
   </div></div>;
 }
 
-function OilHistory({ d, del, add }) {
+function OilHistory({ d, del, edit, add }) {
   const [carId, setCarId] = useState(d.cars[0]?._id || '');
   const oils = d.expenses
     .filter((e) => e.carId === carId && e.category === 'Oil change' && e.odometer != null)
@@ -830,7 +885,7 @@ function OilHistory({ d, del, add }) {
         <div className="mute">Meter reading: {km(item.odometer)} km</div>
         {ran != null && <div className={ran > OIL_INTERVAL_KM ? 'oil-run warn' : ran >= 0 ? 'oil-run good' : 'oil-run bad'}>Ran {km(ran)} km on this oil{ran > OIL_INTERVAL_KM ? ` · ${km(ran - OIL_INTERVAL_KM)} km over limit` : ran >= 0 ? ` · ${km(OIL_INTERVAL_KM - ran)} km before limit` : ''}</div>}
         {item.note && <div className="mute">{item.note}</div>}
-        <button className="del oil-delete" onClick={() => del('expenses', item._id, 'Delete this oil change record?')}>Delete</button>
+        <div className="oil-actions"><button className="ghost record-edit" onClick={() => edit(item)}>Edit</button><button className="del" onClick={() => del('expenses', item._id, 'Delete this oil change record?')}>Delete</button></div>
       </div>;
     })}
   </>;

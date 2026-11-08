@@ -28,7 +28,7 @@ body{
   position:relative;
   overflow:hidden;
   color:#fff;
-  padding:16px 16px 20px;
+  padding:14px 16px 14px;
   border-radius:0 0 30px 30px;
   background:linear-gradient(135deg,var(--deep),var(--mid) 60%,var(--teal));
   box-shadow:0 14px 30px -14px rgba(10,47,61,.6);
@@ -51,12 +51,11 @@ body{
   justify-content:flex-end;
   align-items:center;
   gap:8px;
-  margin-bottom:12px;
-  position:relative;
+  position:absolute;
+  top:6px;
+  right:12px;
   z-index:3;
-  max-width:640px;
-  margin-left:auto;
-  margin-right:auto;
+  margin:0;
 }
 .hero-btn,.lock{
   min-height:36px;
@@ -77,22 +76,22 @@ body{
 }
 .hero-btn:hover,.lock:hover{background:rgba(255,255,255,.3)}
 .hero-btn:active,.lock:active{transform:scale(.95)}
-.install-btn{width:44px;padding:6px}
+.install-btn{width:36px;min-height:36px;padding:4px}
 .health-dot{
-  width:44px;
-  min-width:44px;
-  height:44px;
+  width:32px;
+  min-width:32px;
+  height:32px;
+  min-height:32px;
   padding:0;
   background:transparent;
   box-shadow:none;
   display:grid;
   place-items:center;
 }
-.health-dot::after{content:"";width:12px;height:12px;border-radius:50%;background:#9aaab5;transition:background .25s,box-shadow .25s}
-.health-dot.connected::after{background:#38d996;box-shadow:0 0 9px rgba(56,217,150,.85);animation:status-pulse 2.4s ease-in-out infinite}
-.health-dot.disconnected::after{background:#ff6469;box-shadow:0 0 7px rgba(255,100,105,.7)}
+.health-dot::after{content:"";width:12px;height:12px;border:2px solid #000;border-radius:50%;background:#9aaab5}
+.health-dot.connected::after{background:#00e65c;box-shadow:none;animation:none}
+.health-dot.disconnected::after{background:#ff3b3f;box-shadow:none}
 .health-dot.checking::after{background:#aab8c0}
-@keyframes status-pulse{50%{box-shadow:0 0 14px rgba(56,217,150,1)}}
 
 .hrow{
   display:flex;
@@ -104,6 +103,7 @@ body{
   z-index:1;
   max-width:640px;
   margin:auto;
+  padding-top:28px;
 }
 .stat-block{min-width:0;flex:1 1 140px}
 .hero small{display:block;font-size:12px;opacity:.8;margin-bottom:2px}
@@ -128,8 +128,8 @@ body{
 .road{
   position:relative;
   max-width:640px;
-  margin:14px auto 0;
-  padding-top:36px;
+  margin:8px auto 0;
+  padding-top:34px;
 }
 .road .car{
   position:absolute;
@@ -375,7 +375,9 @@ nav button.on{
 .oil-status.bad,.oil-run.bad{color:var(--bad);background:#fff1f1;border-color:#f3babc}
 .oil-run{font-size:13px;font-weight:700;border-radius:10px;padding:7px 9px;margin:8px 0}
 .oil-history-item{position:relative;padding-bottom:54px}
-.oil-delete{position:absolute;right:14px;bottom:12px}
+.oil-actions{position:absolute;right:14px;bottom:12px;display:flex;gap:7px}
+.record-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
+.record-edit{min-height:36px;padding:7px 11px;font-size:13px}
 .oil-summary b{font-size:13px}
 
 /* Totals 3-column Grid */
@@ -436,7 +438,7 @@ nav button.on{
 /* Narrow Screen Refinements (<380px) */
 @media (max-width:380px){
   main{padding:12px 8px}
-  .hero{padding:14px 12px 18px}
+  .hero{padding:12px 12px 14px}
   .tot{gap:5px}
   .tot div{padding:8px 4px}
   .tot b{font-size:13px}
