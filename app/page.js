@@ -41,7 +41,7 @@ const P = { calendar: 'M4 7h16v13H4zM4 11h16M8 3v4M16 3v4', entry: 'M12 5v14M5 1
 const Ico = ({ k }) => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={P[k]} /></svg>;
 
 function getPinStrength(p) {
-  if (!p || p.length < 6) return { level: 'weak', label: 'Weak' };
+  if (!p || p.length < 4) return { level: 'weak', label: 'Weak' };
   const allSame = /^(.)\1+$/.test(p);
   const common = ['123456', '654321', '12345678', 'password', 'admin123', '000000', '111111'];
   if (allSame || common.includes(p.toLowerCase())) {
@@ -147,8 +147,8 @@ function ChangePinModal({ onClose }) {
     if (newPin !== confirmPin) {
       return setErr('New PIN and confirm PIN do not match');
     }
-    if (newPin.length < 6) {
-      return setErr('New PIN must be at least 6 characters');
+    if (newPin.length < 4) {
+      return setErr('New PIN must be at least 4 characters');
     }
     if (newPin === oldPin) {
       return setErr('New PIN must be different from old PIN');
@@ -203,7 +203,7 @@ function ChangePinModal({ onClose }) {
             </label>
 
             <label>
-              New PIN / Password (min 6 characters)
+              New PIN / Password (min 4 characters)
               <div className="pw-wrap">
                 <input
                   type={showPw ? 'text' : 'password'}

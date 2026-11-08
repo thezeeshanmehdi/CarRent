@@ -49,8 +49,8 @@ export async function POST(req) {
   if (!newPin || typeof newPin !== 'string') {
     return N.json({ error: 'New PIN is required' }, { status: 400, headers: noStore });
   }
-  if (newPin.length < 6) {
-    return N.json({ error: 'New PIN must be at least 6 characters' }, { status: 400, headers: noStore });
+  if (newPin.length < 4) {
+    return N.json({ error: 'New PIN must be at least 4 characters' }, { status: 400, headers: noStore });
   }
   if (newPin.length > 64) {
     return N.json({ error: 'New PIN cannot exceed 64 characters' }, { status: 400, headers: noStore });
