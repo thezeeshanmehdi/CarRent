@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
+import { generateDriverPdf, generateCarPdf, downloadOrSharePdf } from '../lib/pdf';
 
 const local = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
 const rs = (n) => 'Rs ' + Math.round(n || 0).toLocaleString('en-US');
@@ -10,7 +11,7 @@ const api = async (m, p, b) => {
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Server error ' + r.status);
   return r.json();
 };
-const CATS = ['Fuel', 'Repair', 'Service', 'Tyres', 'Challan', 'Insurance', 'Token/Tax', 'Other'].map((c) => [c, c]);
+const CATS = ['Fuel', 'Oil change', 'Repair', 'Service', 'Tyres', 'Challan', 'Insurance', 'Token/Tax', 'Other'].map((c) => [c, c]);
 
 function Count({ v, pre = 'Rs ' }) {
   const [n, setN] = useState(0);
@@ -112,12 +113,22 @@ export default function App() {
           {d.cars.map((c) => {
             const earn = d.entries.filter((e) => e.carId === c._id).reduce((s, e) => s + e.earning, 0);
             const exp = d.expenses.filter((e) => e.carId === c._id).reduce((s, e) => s + e.amount, 0);
+            const carOils = d.expenses
+              .filter((e) => e.carId === c._id && e.category === 'Oil change' && e.odometer != null)
+              .sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : (b.odometer || 0) - (a.odometer || 0)));
+            const lastOil = carOils[0];
             return (
               <div className="card" key={c._id}>
                 <div className="between"><div className="who"><i className="av">{(c.name || '?')[0]}</i><b>{c.name}<br /><span className="mute">{c.number}</span></b></div>
                   <span><button className="ghost" onClick={() => setForm({ col: 'cars', init: c, title: 'Edit car' })}>Edit</button> <button className="del" onClick={() => del('cars', c._id)}>Delete</button></span></div>
                 <div className="mute">{[c.make, c.model, c.year, c.color].filter(Boolean).join(' ')} · Driver: {drv(c.driverId)}</div>
                 <div className="mute">Cost {rs(c.cost)} · Earned {rs(earn)} · Expense {rs(exp)}</div>
+                {lastOil && (
+                  <div className="mute">
+                    Last oil change: {lastOil.date} at {Number(lastOil.odometer).toLocaleString('en-US')} km
+                    {lastOil.nextDue ? ` · Next due: ${Number(lastOil.nextDue).toLocaleString('en-US')} km` : ''}
+                  </div>
+                )}
                 {c.cost > 0 && <><div className="earn">Recovered {Math.max(0, Math.round(((earn - exp) / c.cost) * 100))}% of cost</div><div className="bar"><span style={{ width: Math.min(100, Math.max(2, Math.round(((earn - exp) / c.cost) * 100))) + '%' }} /></div></>}
               </div>
             );
@@ -145,11 +156,26 @@ export default function App() {
 function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
   const [mode, setMode] = useState('earning');
   const [date, setDate] = useState(pre?.date || local());
-  const [v, setV] = useState({ carId: pre?.carId, driverId: pre?.driverId });
+  const [v, setV] = useState({ carId: pre?.carId, driverId: pre?.driverId, category: 'Fuel' });
   const [ok, setOk] = useState(false);
   const set = (k) => (e) => setV({ ...v, [k]: e.target.value });
   const dayE = d.entries.filter((e) => e.date === date);
   const absent = d.cars.filter((c) => !dayE.some((e) => e.carId === c._id));
+
+  const isOil = mode === 'expense' && v.category === 'Oil change';
+
+  const prevOil = useMemo(() => {
+    if (!v.carId || !isOil) return null;
+    const list = d.expenses
+      .filter((e) => e.carId === v.carId && e.category === 'Oil change' && e.odometer != null && e.date <= date)
+      .sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : (b.odometer || 0) - (a.odometer || 0)));
+    return list[0] || null;
+  }, [d.expenses, v.carId, isOil, date]);
+
+  const curOdoNum = v.odometer !== undefined && v.odometer !== '' ? Number(v.odometer) : null;
+  const isOdoInvalid = isOil && prevOil && curOdoNum !== null && !isNaN(curOdoNum) && curOdoNum < prevOil.odometer;
+  const kmRun = isOil && prevOil && curOdoNum !== null && !isNaN(curOdoNum) && curOdoNum >= prevOil.odometer ? curOdoNum - prevOil.odometer : null;
+
   const save = async () => {
     if (!v.carId) return alert('Select a car');
     if (mode === 'earning') {
@@ -157,10 +183,38 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
       const old = dayE.find((e) => e.carId === v.carId);
       old ? await api('PUT', `entries/${old._id}`, body) : await api('POST', 'entries', body);
     } else {
-      await api('POST', 'expenses', { carId: v.carId, date, category: v.category || 'Other', amount: Number(v.amount) || 0, note: v.note || '' });
+      if (v.category === 'Oil change') {
+        if (v.odometer === undefined || v.odometer === '' || isNaN(Number(v.odometer))) {
+          return alert('Car meter reading at oil change (km) is required');
+        }
+        const curOdo = Number(v.odometer);
+        if (prevOil && curOdo < prevOil.odometer) {
+          return alert(`Current reading (${curOdo} km) must be greater than or equal to previous reading (${prevOil.odometer} km)`);
+        }
+      }
+      const expBody = {
+        carId: v.carId,
+        date,
+        category: v.category || 'Other',
+        amount: Number(v.amount) || 0,
+        note: v.note || ''
+      };
+      if (v.category === 'Oil change') {
+        expBody.odometer = Number(v.odometer);
+        if (v.nextDue !== undefined && v.nextDue !== '') {
+          expBody.nextDue = Number(v.nextDue);
+        } else {
+          expBody.nextDue = Number(v.odometer) + 5000;
+        }
+      }
+      await api('POST', 'expenses', expBody);
     }
-    setV({ carId: v.carId }); setOk(true); setTimeout(() => setOk(false), 1300); load();
+    setV({ carId: v.carId, category: v.category });
+    setOk(true);
+    setTimeout(() => setOk(false), 1300);
+    load();
   };
+
   return (
     <>
       <div className="row seg" style={{ marginBottom: 10 }}>
@@ -173,14 +227,90 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
         {mode === 'earning'
           ? <label>Driver<select value={v.driverId || ''} onChange={set('driverId')}><option value="">Car's current driver</option>{drvOpts.map(([a, b]) => <option key={a} value={a}>{b}</option>)}</select></label>
           : <label>Category<select value={v.category || 'Fuel'} onChange={set('category')}>{CATS.map(([a, b]) => <option key={a}>{b}</option>)}</select></label>}
+
+        {isOil && v.carId && (
+          <div className="card" style={{ background: '#f0f7f9', border: '1px solid var(--line)', padding: 12, margin: '6px 0 12px' }}>
+            {prevOil ? (
+              <>
+                <div style={{ fontSize: 13, color: 'var(--ink)' }}>
+                  Previous oil change: <b>{prevOil.date}</b>, <b>{Number(prevOil.odometer).toLocaleString('en-US')} km</b>
+                </div>
+                {kmRun !== null && (
+                  <div style={{ color: 'var(--earn)', fontWeight: 600, fontSize: 13, marginTop: 4 }}>
+                    Car ran {kmRun.toLocaleString('en-US')} km on the last oil
+                  </div>
+                )}
+                {isOdoInvalid && (
+                  <div className="abs" style={{ fontSize: 13, marginTop: 4 }}>
+                    Current reading must be ≥ previous reading ({Number(prevOil.odometer).toLocaleString('en-US')} km)
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="mute" style={{ fontSize: 13 }}>First oil change recorded for this car</div>
+            )}
+          </div>
+        )}
+
+        {isOil && (
+          <>
+            <label>Car meter reading at oil change (km) *
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="e.g. 85000"
+                value={v.odometer ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const num = Number(val);
+                  setV((old) => ({
+                    ...old,
+                    odometer: val,
+                    nextDue: val !== '' && !isNaN(num) ? String(num + 5000) : old.nextDue || ''
+                  }));
+                }}
+              />
+            </label>
+            <label>Next oil change due at (km) (optional)
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="e.g. 90000"
+                value={v.nextDue ?? ''}
+                onChange={(e) => setV({ ...v, nextDue: e.target.value })}
+              />
+            </label>
+          </>
+        )}
+
         <label>{mode === 'earning' ? 'Rent received (Rs)' : 'Amount (Rs)'}<input type="number" inputMode="decimal" value={v.amount ?? ''} onChange={set('amount')} /></label>
         <label>Note<input value={v.note || ''} onChange={set('note')} /></label>
-        <button className={'cta' + (ok ? ' ok' : '')} onClick={save}>{ok ? 'Saved ✓' : mode === 'earning' ? 'Save earning' : 'Save expense'}</button>
+        {isOdoInvalid && <p className="abs" style={{ margin: '0 0 10px 0' }}>Current meter reading cannot be lower than previous reading ({prevOil.odometer} km).</p>}
+        <button
+          className={'cta' + (ok ? ' ok' : '')}
+          disabled={isOdoInvalid}
+          onClick={save}
+          style={isOdoInvalid ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
+        >
+          {ok ? 'Saved ✓' : mode === 'earning' ? 'Save earning' : 'Save expense'}
+        </button>
       </div>
       {absent.length > 0 && <div className="card"><b className="abs">No record on {date}</b>
         <div className="chips">{absent.map((c) => <button key={c._id} className="chip" onClick={() => { setMode('earning'); setV({ ...v, carId: c._id }); }}>{c.name}</button>)}</div></div>}
       {dayE.map((e) => <div className="card between" key={e._id}><span><b>{car(e.carId)}</b> <span className="mute">{drv(e.driverId)}</span></span><span><span className="earn">{rs(e.earning)}</span> <button className="del" onClick={() => del('entries', e._id)}>×</button></span></div>)}
-      {d.expenses.filter((e) => e.date === date).map((e) => <div className="card between" key={e._id}><span><b>{car(e.carId)}</b> <span className="mute">{e.category}</span></span><span><span className="exp">{rs(e.amount)}</span> <button className="del" onClick={() => del('expenses', e._id)}>×</button></span></div>)}
+      {d.expenses.filter((e) => e.date === date).map((e) => (
+        <div className="card between" key={e._id}>
+          <span>
+            <b>{car(e.carId)}</b>{' '}
+            <span className="mute">
+              {e.category}{e.odometer != null ? ` (${Number(e.odometer).toLocaleString('en-US')} km)` : ''}{e.note ? ` · ${e.note}` : ''}
+            </span>
+          </span>
+          <span>
+            <span className="exp">{rs(e.amount)}</span> <button className="del" onClick={() => del('expenses', e._id)}>×</button>
+          </span>
+        </div>
+      ))}
     </>
   );
 }
@@ -189,6 +319,11 @@ function Reports({ d, car, drv }) {
   const [p, setP] = useState('month');
   const [val, setVal] = useState({ day: local(), month: local().slice(0, 7), year: local().slice(0, 4) });
   const [by, setBy] = useState('car');
+  const [pdfType, setPdfType] = useState('driver');
+  const [pdfTarget, setPdfTarget] = useState('');
+  const [pdfMonth, setPdfMonth] = useState(local().slice(0, 7));
+  const [pdfLoading, setPdfLoading] = useState(false);
+
   const [s, e] = useMemo(() => {
     const x = val[p];
     if (p === 'day') return [x, x];
@@ -214,6 +349,32 @@ function Reports({ d, car, drv }) {
       });
   const E = ent.reduce((a, x) => a + x.earning, 0), X = exp.reduce((a, x) => a + x.amount, 0);
   const byCat = Object.entries(exp.reduce((o, x) => ((o[x.category] = (o[x.category] || 0) + x.amount), o), {}));
+
+  const handleGeneratePdf = async (isShare = false) => {
+    const targetList = pdfType === 'driver' ? d.drivers : d.cars;
+    const targetId = pdfTarget || targetList[0]?._id;
+    if (!targetId) return alert(`Please add and select a ${pdfType} first`);
+
+    setPdfLoading(true);
+    try {
+      let doc, fileName;
+      if (pdfType === 'driver') {
+        const drvObj = d.drivers.find((x) => x._id === targetId);
+        fileName = `${(drvObj?.name || 'Driver').trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '_')}_${pdfMonth}.pdf`;
+        doc = generateDriverPdf({ d, driverId: targetId, month: pdfMonth });
+      } else {
+        const carObj = d.cars.find((x) => x._id === targetId);
+        fileName = `${(carObj?.name || 'Car').trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '_')}_${pdfMonth}.pdf`;
+        doc = generateCarPdf({ d, carId: targetId, month: pdfMonth });
+      }
+      await downloadOrSharePdf(doc, fileName, isShare);
+    } catch (err) {
+      alert('Error generating PDF: ' + (err.message || err));
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
   return (
     <>
       <div className="row seg" style={{ marginBottom: 8 }}>{[['day', 'Daily'], ['month', 'Monthly'], ['year', 'Yearly']].map(([k, l]) => <button key={k} className={p === k ? 'on' : ''} onClick={() => setP(k)}>{l}</button>)}</div>
@@ -232,6 +393,34 @@ function Reports({ d, car, drv }) {
         </div>
       ))}
       {byCat.length > 0 && <div className="card"><b>Expense by category</b>{byCat.map(([k, a]) => <div className="between mute" key={k}><span>{k}</span><span>{rs(a)}</span></div>)}</div>}
+
+      <div className="card" style={{ marginTop: 14 }}>
+        <b style={{ fontSize: 16 }}>Download Monthly PDF Report</b>
+        <div className="row seg" style={{ margin: '10px 0 8px' }}>
+          <button className={pdfType === 'driver' ? 'on' : ''} onClick={() => { setPdfType('driver'); setPdfTarget(''); }}>Driver-wise</button>
+          <button className={pdfType === 'car' ? 'on' : ''} onClick={() => { setPdfType('car'); setPdfTarget(''); }}>Car-wise</button>
+        </div>
+        <label>
+          {pdfType === 'driver' ? 'Select Driver' : 'Select Car'}
+          <select value={pdfTarget || (pdfType === 'driver' ? d.drivers[0]?._id : d.cars[0]?._id) || ''} onChange={(e) => setPdfTarget(e.target.value)}>
+            {(pdfType === 'driver' ? d.drivers : d.cars).map((x) => (
+              <option key={x._id} value={x._id}>{x.name} {x.number ? `(${x.number})` : ''}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Select Month
+          <input type="month" value={pdfMonth} onChange={(e) => setPdfMonth(e.target.value)} />
+        </label>
+        <div className="row" style={{ marginTop: 12 }}>
+          <button className="cta" onClick={() => handleGeneratePdf(false)} disabled={pdfLoading}>
+            {pdfLoading ? 'Generating…' : 'Download PDF'}
+          </button>
+          <button className="ghost" onClick={() => handleGeneratePdf(true)} disabled={pdfLoading} title="Share via WhatsApp or Apps">
+            Share
+          </button>
+        </div>
+      </div>
     </>
   );
 }
