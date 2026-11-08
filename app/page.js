@@ -5,9 +5,9 @@ const local = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).
 const rs = (n) => 'Rs ' + Math.round(n || 0).toLocaleString('en-US');
 const days = (a, b) => { const o = []; for (let t = Date.parse(a); t <= Date.parse(b); t += 864e5) o.push(new Date(t).toISOString().slice(0, 10)); return o; };
 const api = async (m, p, b) => {
-  const r = await fetch('/api/' + p, { method: m, headers: { 'content-type': 'application/json', 'x-pin': localStorage.pin || '' }, body: b && JSON.stringify(b) });
+  const r = await fetch('/api/' + p, { method: m, headers: { 'content-type': 'application/json' }, body: b && JSON.stringify(b) });
   if (r.status === 401) throw new Error('auth');
-  if (!r.ok) throw new Error('Server error ' + r.status);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Server error ' + r.status);
   return r.json();
 };
 const CATS = ['Fuel', 'Repair', 'Service', 'Tyres', 'Challan', 'Insurance', 'Token/Tax', 'Other'].map((c) => [c, c]);
@@ -22,7 +22,7 @@ function Count({ v, pre = 'Rs ' }) {
   }, [v]);
   return <>{pre}{Math.round(n).toLocaleString('en-US')}</>;
 }
-const P = { entry: 'M12 5v14M5 12h14', reports: 'M5 20V10M12 20V4M19 20v-7', cars: 'M5 16l1.5-5a2 2 0 011.9-1.4h7.2a2 2 0 011.9 1.4L19 16M4 16h16v3H4zM7 19v1.5M17 19v1.5', drivers: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0' };
+const P = { calendar: 'M4 7h16v13H4zM4 11h16M8 3v4M16 3v4', entry: 'M12 5v14M5 12h14', reports: 'M5 20V10M12 20V4M19 20v-7', cars: 'M5 16l1.5-5a2 2 0 011.9-1.4h7.2a2 2 0 011.9 1.4L19 16M4 16h16v3H4zM7 19v1.5M17 19v1.5', drivers: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0' };
 const Ico = ({ k }) => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={P[k]} /></svg>;
 
 function Form({ fields, init, onSave, onCancel, title }) {
@@ -51,6 +51,7 @@ export default function App() {
   const [form, setForm] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const [pre, setPre] = useState(null);
 
   const load = async () => {
     try {
@@ -74,8 +75,13 @@ export default function App() {
   if (locked) return (
     <main><div className="card" style={{ marginTop: 40 }}>
       <h3>Enter PIN</h3>
-      <form onSubmit={(e) => { e.preventDefault(); localStorage.pin = e.target.pin.value; load(); }}>
-        <input name="pin" type="password" inputMode="numeric" autoFocus placeholder="PIN" />
+      <form onSubmit={async (e) => {
+        e.preventDefault(); setErr('');
+        const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pin: e.target.pin.value }) });
+        if (r.ok) { setLoading(true); load(); } else setErr((await r.json().catch(() => ({}))).error || 'Login failed');
+      }}>
+        <input name="pin" type="password" autoFocus placeholder="PIN / password" autoComplete="current-password" />
+        {err && <p className="abs">{err}</p>}
         <button style={{ marginTop: 10, width: '100%' }}>Open</button>
       </form>
     </div></main>
@@ -92,11 +98,13 @@ export default function App() {
           <div className="r"><small>Is mahine ka net</small><b><Count v={monNet} /></b></div>
         </div>
         <div className="lane" />
+        <button className="lock" onClick={async () => { await fetch('/api/login', { method: 'DELETE' }); setLocked(true); }}>Lock</button>
       </header>
       <main key={tab}>
         {loading && <p className="mute">Loading…</p>}
         {err && <p className="abs">{err}. MongoDB settings check karo.</p>}
-        {tab === 'entry' && <Entry {...{ d, car, drv, carOpts, drvOpts, load, del }} />}
+        {tab === 'entry' && <Entry {...{ d, car, drv, carOpts, drvOpts, load, del, pre }} />}
+        {tab === 'calendar' && <Cal d={d} go={(x) => { setPre(x); setTab('entry'); }} />}
         {tab === 'reports' && <Reports {...{ d, car, drv }} />}
         {tab === 'cars' && <>
           <button style={{ width: '100%', marginBottom: 10 }} onClick={() => setForm({ col: 'cars', init: {}, title: 'New car' })}>+ Add car</button>
@@ -129,15 +137,15 @@ export default function App() {
         </>}
       </main>
       {form && <Form title={form.title} init={form.init} fields={form.col === 'cars' ? CARF : DRVF} onCancel={() => setForm(null)} onSave={(v) => upsert(form.col, v)} />}
-      <nav>{[['entry', 'Entry'], ['reports', 'Reports'], ['cars', 'Cars'], ['drivers', 'Drivers']].map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}><Ico k={k} />{l}</button>)}</nav>
+      <nav>{[['entry', 'Entry'], ['calendar', 'Calendar'], ['reports', 'Reports'], ['cars', 'Cars'], ['drivers', 'Drivers']].map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => { setPre(null); setTab(k); }}><Ico k={k} />{l}</button>)}</nav>
     </>
   );
 }
 
-function Entry({ d, car, drv, carOpts, drvOpts, load, del }) {
+function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre }) {
   const [mode, setMode] = useState('earning');
-  const [date, setDate] = useState(local());
-  const [v, setV] = useState({});
+  const [date, setDate] = useState(pre?.date || local());
+  const [v, setV] = useState({ carId: pre?.carId, driverId: pre?.driverId });
   const [ok, setOk] = useState(false);
   const set = (k) => (e) => setV({ ...v, [k]: e.target.value });
   const dayE = d.entries.filter((e) => e.date === date);
@@ -224,6 +232,61 @@ function Reports({ d, car, drv }) {
         </div>
       ))}
       {byCat.length > 0 && <div className="card"><b>Expense by category</b>{byCat.map(([k, a]) => <div className="between mute" key={k}><span>{k}</span><span>{rs(a)}</span></div>)}</div>}
+    </>
+  );
+}
+
+const short = (n) => (n >= 1000 ? (n / 1000).toFixed(n % 1000 ? 1 : 0) + 'k' : n);
+function Cal({ d, go }) {
+  const [by, setBy] = useState('driver');
+  const [id, setId] = useState('');
+  const [m, setM] = useState(local().slice(0, 7));
+  const list = by === 'driver' ? d.drivers : d.cars;
+  const sel = id || list[0]?._id;
+  const o = list.find((x) => x._id === sel) || {};
+  const mine = d.entries.filter((e) => e[by === 'driver' ? 'driverId' : 'carId'] === sel);
+  const sum = {};
+  mine.forEach((e) => (sum[e.date] = (sum[e.date] || 0) + e.earning));
+  const first = mine.map((e) => e.date).sort()[0];
+  const start = (by === 'driver' ? o.joinDate : o.startDate || o.purchaseDate) || first || '9999';
+  const [y, mo] = m.split('-').map(Number);
+  const lead = (new Date(y, mo - 1, 1).getDay() + 6) % 7;
+  const t = local();
+  const cells = [...Array(lead).fill(null), ...Array.from({ length: new Date(y, mo, 0).getDate() }, (_, i) => `${m}-${String(i + 1).padStart(2, '0')}`)];
+  const cls = (dt) => { const a = sum[dt]; if (a > 0) return 'ok'; if (dt > t || dt < start) return 'na'; return a === 0 ? 'zero' : 'no'; };
+  const cnt = (c) => cells.filter((x) => x && cls(x) === c).length;
+  const tot = cells.reduce((a, x) => a + (x ? sum[x] || 0 : 0), 0);
+  const shift = (k) => { const x = new Date(y, mo - 1 + k, 1); setM(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`); };
+  const pick = (dt) => go(by === 'driver'
+    ? { date: dt, driverId: sel, carId: d.cars.find((c) => c.driverId === sel)?._id || mine[0]?.carId }
+    : { date: dt, carId: sel, driverId: o.driverId });
+  return (
+    <>
+      <div className="row seg" style={{ marginBottom: 8 }}>
+        <button className={by === 'driver' ? 'on' : ''} onClick={() => { setBy('driver'); setId(''); }}>Driver</button>
+        <button className={by === 'car' ? 'on' : ''} onClick={() => { setBy('car'); setId(''); }}>Car</button>
+      </div>
+      {list.length === 0 ? <p className="mute">Add a {by} first.</p> : <>
+        <div className="card">
+          <select value={sel || ''} onChange={(e) => setId(e.target.value)}>{list.map((x) => <option key={x._id} value={x._id}>{x.name}</option>)}</select>
+          <div className="between" style={{ marginTop: 10 }}>
+            <button className="ghost" onClick={() => shift(-1)}>‹</button>
+            <b>{new Date(y, mo - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })}</b>
+            <button className="ghost" onClick={() => shift(1)}>›</button>
+          </div>
+        </div>
+        <div className="tot"><div><span className="mute">Present</span><b className="earn">{cnt('ok')}</b></div><div><span className="mute">Absent</span><b className="exp">{cnt('no') + cnt('zero')}</b></div><div><span className="mute">Received</span><b><Count v={tot} /></b></div></div>
+        <div className="card">
+          <div className="cal">
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((w) => <i key={w} className="wd">{w}</i>)}
+            {cells.map((dt, i) => dt
+              ? <button key={dt} className={'day ' + cls(dt)} onClick={() => pick(dt)}><b>{+dt.slice(8)}</b><small>{sum[dt] > 0 ? short(sum[dt]) : ''}</small></button>
+              : <i key={'e' + i} />)}
+          </div>
+          <div className="legend"><span><i style={{ background: '#0f9d6a' }} />Present (money received)</span><span><i style={{ background: '#e5484d' }} />Absent (no entry)</span><span><i style={{ background: '#ffe8b8' }} />Entry with Rs 0</span></div>
+          <p className="mute" style={{ marginBottom: 0 }}>Kisi din par tap karo, us din ki entry khul jayegi.</p>
+        </div>
+      </>}
     </>
   );
 }

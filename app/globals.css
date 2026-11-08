@@ -49,3 +49,15 @@ nav button.on{color:#fff;background:linear-gradient(135deg,var(--deep),var(--mid
 .tot b{display:block;font-size:16px;font-weight:700}
 .tot div:last-child{background:linear-gradient(135deg,var(--deep),var(--mid));color:#fff}.tot div:last-child .mute{color:#bfe3e6}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.wd{font-style:normal;text-align:center;font-size:11px;font-weight:600;color:var(--mute)}
+.day{aspect-ratio:1;padding:2px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:14px;line-height:1.15;box-shadow:none;animation:pop .35s both}
+.day small{font-size:9px;font-weight:600}
+.day.ok{background:linear-gradient(135deg,#27c98f,var(--earn));color:#fff}
+.day.no{background:linear-gradient(135deg,#ff7a7e,var(--bad));color:#fff}
+.day.zero{background:#ffe8b8;color:#6a4300}
+.day.na{background:#edf3f6;color:#9aaab5}
+@keyframes pop{from{opacity:0;transform:scale(.6)}}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;font-size:12px;color:var(--mute)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px}
+.lock{position:absolute;top:14px;right:16px;z-index:2;padding:6px 12px;font-size:12px;color:#fff;background:rgba(255,255,255,.2);box-shadow:none;backdrop-filter:blur(4px)}
