@@ -37,8 +37,50 @@ function Count({ v, pre = 'Rs ' }) {
   return <>{pre}{Math.round(n).toLocaleString('en-US')}</>;
 }
 
-const P = { calendar: 'M4 7h16v13H4zM4 11h16M8 3v4M16 3v4', entry: 'M12 5v14M5 12h14', reports: 'M5 20V10M12 20V4M19 20v-7', cars: 'M5 16l1.5-5a2 2 0 011.9-1.4h7.2a2 2 0 011.9 1.4L19 16M4 16h16v3H4zM7 19v1.5M17 19v1.5', drivers: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0', more: 'M6 12h.01M12 12h.01M18 12h.01', oil: 'M8 3h8l1 5-5 13-5-13z', lock: 'M6 11h12v10H6zM8 11V7a4 4 0 018 0v4', pin: 'M12 15v2M8 11V8a4 4 0 018 0v3M6 11h12v10H6z' };
+const P = {
+  calendar: 'M4 7h16v13H4zM4 11h16M8 3v4M16 3v4',
+  entry: 'M12 5v14M5 12h14',
+  reports: 'M5 20V10M12 20V4M19 20v-7',
+  cars: 'M5 16l1.5-5a2 2 0 011.9-1.4h7.2a2 2 0 011.9 1.4L19 16M4 16h16v3H4zM7 19v1.5M17 19v1.5',
+  drivers: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0',
+  more: 'M6 12h.01M12 12h.01M18 12h.01',
+  oil: 'M8 3h8l1 5-5 13-5-13z',
+  lock: 'M6 11h12v10H6zM8 11V7a4 4 0 018 0v4',
+  pin: 'M12 15v2M8 11V8a4 4 0 018 0v3M6 11h12v10H6z',
+  bio: 'M12 11a4 4 0 018 0v2a4 4 0 01-8 0zM3 7c0-1.1.9-2 2-2h2M17 5h2a2 2 0 012 2v2M21 15v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2'
+};
 const Ico = ({ k }) => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={P[k]} /></svg>;
+
+function FaceIdIcon({ size = 26 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 8V6a2 2 0 0 1 2-2h2" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v2" />
+      <path d="M20 16v2a2 2 0 0 1-2 2h-2" />
+      <path d="M8 20H6a2 2 0 0 1-2-2v-2" />
+      <path d="M9 10h.01" />
+      <path d="M15 10h.01" />
+      <path d="M12 11v3" />
+      <path d="M9.5 16a3.5 3.5 0 0 0 5 0" />
+    </svg>
+  );
+}
+
+function FingerprintIcon({ size = 26 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
+      <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
+      <path d="M2 16h.01" />
+      <path d="M21.8 16c.2-2 .131-5.354 0-6" />
+      <path d="M9 6.8a6 6 0 0 1 9 5.2c0 .47 0 1.17-.02 2" />
+      <path d="M4.5 13a8 8 0 0 1 1.5-5C7.2 6.2 9.5 5 12 5c2.4 0 4.9 1.1 6.1 3" />
+      <path d="M12 2a10 10 0 0 0-8 4.2" />
+      <path d="M12 2a10 10 0 0 1 7.4 3.3" />
+      <path d="M8 15a4 4 0 0 0 8 0" />
+    </svg>
+  );
+}
 
 function getPinStrength(p) {
   if (!p || p.length < 4) return { level: 'weak', label: 'Weak' };
@@ -282,7 +324,7 @@ function ChangePinModal({ onClose }) {
 export default function App() {
   const [tab, setTab] = useState('entry');
   const [d, setD] = useState({ cars: [], drivers: [], entries: [], expenses: [] });
-  const [locked, setLocked] = useState(false);
+  const [locked, setLocked] = useState(true);
   const [form, setForm] = useState(null);
   const [recordEditor, setRecordEditor] = useState(null);
   const [pinSheet, setPinSheet] = useState(false);
@@ -301,6 +343,34 @@ export default function App() {
   const [loggingIn, setLoggingIn] = useState(false);
   const pinInputRef = useRef(null);
 
+  // Biometric state
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioRegistered, setBioRegistered] = useState(false);
+  const [bioLoading, setBioLoading] = useState(false);
+  const [showBioSetup, setShowBioSetup] = useState(false);
+
+  const isIOS = useMemo(() => {
+    if (typeof navigator === 'undefined') return false;
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) || (typeof navigator.platform === 'string' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }, []);
+
+  // Auto-lock when tab/app was closed or in background for > 2 minutes
+  useEffect(() => {
+    let hideTime = null;
+    const handleVis = () => {
+      if (document.visibilityState === 'hidden') {
+        hideTime = Date.now();
+      } else if (document.visibilityState === 'visible') {
+        if (hideTime && Date.now() - hideTime > 2 * 60 * 1000) {
+          setLocked(true);
+        }
+        hideTime = null;
+      }
+    };
+    document.addEventListener('visibilitychange', handleVis);
+    return () => document.removeEventListener('visibilitychange', handleVis);
+  }, []);
+
   // Request counter to prevent stale async responses from overriding state
   const reqIdRef = useRef(0);
 
@@ -317,6 +387,20 @@ export default function App() {
     };
     window.addEventListener('beforeinstallprompt', installHandler);
     window.addEventListener('appinstalled', () => setDeferredPrompt(null));
+
+    // Check biometric availability
+    if (window.PublicKeyCredential && typeof window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
+      window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then((available) => {
+        setBioAvailable(available);
+        if (available) {
+          // Check if any credential is registered
+          fetch('/api/webauthn/status', { credentials: 'same-origin', cache: 'no-store' })
+            .then((r) => r.json())
+            .then((d) => setBioRegistered(!!d.registered))
+            .catch(() => {});
+        }
+      });
+    }
 
     return () => {
       window.removeEventListener('beforeinstallprompt', installHandler);
@@ -354,7 +438,6 @@ export default function App() {
       );
       if (currentReqId === reqIdRef.current) {
         setD({ cars, drivers, entries, expenses });
-        setLocked(false);
         setErr('');
       }
     } catch (e) {
@@ -372,7 +455,8 @@ export default function App() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  // Don't auto-load on mount — user must authenticate first
+  // load() is called after successful login (PIN or biometric)
   useEffect(() => {
     if (locked) return;
     checkConnection();
@@ -408,6 +492,10 @@ export default function App() {
         setMoreView(null);
         load();
         checkConnection();
+        // Show biometric setup if device supports it but not registered
+        if (bioAvailable && !bioRegistered) {
+          setShowBioSetup(true);
+        }
       } else {
         if (r.status === 429) {
           setErr(data.error || 'Too many attempts. Locked for 15 minutes.');
@@ -433,6 +521,121 @@ export default function App() {
     setMoreOpen(false);
     setMoreView(null);
     setD({ cars: [], drivers: [], entries: [], expenses: [] });
+  };
+
+  // Biometric login handler
+  const handleBioLogin = async () => {
+    setBioLoading(true);
+    setErr('');
+    try {
+      // 1. Get login options from server
+      const optRes = await fetch('/api/webauthn/login-options', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!optRes.ok) {
+        const d = await optRes.json().catch(() => ({}));
+        throw new Error(d.error || 'Could not start biometric login');
+      }
+      const options = await optRes.json();
+
+      // 2. Start browser biometric authentication
+      const { startAuthentication } = await import('@simplewebauthn/browser');
+      const assertion = await startAuthentication({ optionsJSON: options });
+
+      // 3. Verify with server
+      const verRes = await fetch('/api/webauthn/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store',
+        body: JSON.stringify(assertion),
+      });
+      const verData = await verRes.json().catch(() => ({}));
+      if (!verRes.ok) {
+        throw new Error(verData.error || 'Biometric verification failed');
+      }
+
+      // Unlock
+      setLocked(false);
+      setErr('');
+      setTab('entry');
+      setMoreOpen(false);
+      setMoreView(null);
+      load();
+      checkConnection();
+    } catch (e) {
+      if (e.name === 'NotAllowedError') {
+        setErr('Biometric cancelled');
+      } else {
+        setErr(e.message || 'Biometric login failed');
+      }
+    } finally {
+      setBioLoading(false);
+    }
+  };
+
+  // Register biometric credential
+  const handleBioRegister = async () => {
+    setBioLoading(true);
+    try {
+      // 1. Get registration options
+      const optRes = await fetch('/api/webauthn/register-options', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!optRes.ok) throw new Error('Could not start registration');
+      const options = await optRes.json();
+
+      // 2. Create credential with biometric
+      const { startRegistration } = await import('@simplewebauthn/browser');
+      const credential = await startRegistration({ optionsJSON: options });
+
+      // 3. Save on server
+      const regRes = await fetch('/api/webauthn/register', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store',
+        body: JSON.stringify(credential),
+      });
+      if (!regRes.ok) {
+        const d = await regRes.json().catch(() => ({}));
+        throw new Error(d.error || 'Registration failed');
+      }
+
+      setBioRegistered(true);
+      setShowBioSetup(false);
+    } catch (e) {
+      if (e.name === 'NotAllowedError') {
+        // User cancelled biometric prompt
+      } else {
+        setErr(e.message || 'Biometric registration failed');
+      }
+    } finally {
+      setBioLoading(false);
+    }
+  };
+
+  const handleRemoveBio = async () => {
+    if (!confirm('Biometric login remove karna chahte hain?')) return;
+    setBioLoading(true);
+    try {
+      const res = await fetch('/api/webauthn/status', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        setBioRegistered(false);
+      }
+    } catch {
+      alert('Could not remove biometric login.');
+    } finally {
+      setBioLoading(false);
+    }
   };
 
   const car = (id) => d.cars.find((c) => c._id === id)?.name || '—';
@@ -468,33 +671,74 @@ export default function App() {
             <span className="login-lock"><Ico k="lock" /></span>
             <div><span>Welcome back</span><h2>Unlock your logbook</h2></div>
           </div>
-          <p className="login-helper">Apna PIN ya password enter karein.</p>
+
+          {/* Biometric login button — shown only when registered */}
+          {bioAvailable && bioRegistered && (
+            <div className="bio-section">
+              <button
+                type="button"
+                className="bio-big-btn"
+                onClick={handleBioLogin}
+                disabled={bioLoading}
+                aria-label={isIOS ? 'Login with Face ID' : 'Login with Fingerprint'}
+              >
+                <div className="bio-big-icon">
+                  {isIOS ? <FaceIdIcon size={28} /> : <FingerprintIcon size={28} />}
+                </div>
+                <div className="bio-big-label">
+                  <strong>{isIOS ? 'Face ID se Unlock karein' : 'Fingerprint se Unlock karein'}</strong>
+                  <small>{bioLoading ? 'Scanning…' : (isIOS ? 'Tap karein Face ID sensor ke liye' : 'Tap karein finger sensor scan ke liye')}</small>
+                </div>
+              </button>
+              <div className="bio-divider"><span>ya PIN enter karein</span></div>
+            </div>
+          )}
+
+          <p className="login-helper">
+            {bioAvailable && !bioRegistered
+              ? `Apna PIN enter karein. Login ke baad aap ${isIOS ? 'Face ID' : 'Fingerprint'} enable kar saktay hain.`
+              : 'Apna PIN ya password enter karein.'}
+          </p>
           <form onSubmit={handleLogin}>
             <label className="login-label" htmlFor="login-pin">Login PIN</label>
             <div className="pw-wrap login-pin-wrap">
-          <input
-            id="login-pin"
-            ref={pinInputRef}
-            name="pin"
-            type={showLoginPw ? 'text' : 'password'}
-            autoFocus
-            placeholder="Enter your PIN"
-            autoComplete="current-password"
-            disabled={loggingIn}
-          />
-          <button
-            type="button"
-            className="pin-toggle"
-            onClick={() => setShowLoginPw(!showLoginPw)}
-          >
-            {showLoginPw ? 'Hide' : 'Show'}
-          </button>
-        </div>
-        {err && <p className="login-error" role="alert">{err}</p>}
-        <button className="login-submit" disabled={loggingIn}>
-          {loggingIn ? 'Checking…' : <>Open logbook <span aria-hidden="true">→</span></>}
-        </button>
-      </form>
+              <input
+                id="login-pin"
+                ref={pinInputRef}
+                name="pin"
+                type={showLoginPw ? 'text' : 'password'}
+                autoFocus={!bioRegistered}
+                placeholder="Enter your PIN"
+                autoComplete="current-password"
+                disabled={loggingIn}
+              />
+              <button
+                type="button"
+                className="pin-toggle"
+                onClick={() => setShowLoginPw(!showLoginPw)}
+              >
+                {showLoginPw ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            {err && <p className="login-error" role="alert">{err}</p>}
+            <div className="login-btn-row">
+              <button className="login-submit" disabled={loggingIn}>
+                {loggingIn ? 'Checking…' : <>Open logbook <span aria-hidden="true">→</span></>}
+              </button>
+              {bioAvailable && bioRegistered && (
+                <button
+                  type="button"
+                  className="login-bio-icon-btn"
+                  onClick={handleBioLogin}
+                  disabled={bioLoading}
+                  title={isIOS ? 'Unlock with Face ID' : 'Unlock with Fingerprint'}
+                  aria-label={isIOS ? 'Unlock with Face ID' : 'Unlock with Fingerprint'}
+                >
+                  {isIOS ? <FaceIdIcon size={24} /> : <FingerprintIcon size={24} />}
+                </button>
+              )}
+            </div>
+          </form>
 
       {deferredPrompt && (
         <button className="login-install" onClick={handleInstallApp} aria-label="Install CarRent" title="Install CarRent">
@@ -530,9 +774,6 @@ export default function App() {
             title={checkingHealth || healthInfo === null ? 'Checking' : healthInfo.ok ? 'Connected' : 'Not connected'}
           />
         </div>
-
-        {/* Branding logo */}
-        <img className="hero-logo" src="/zee-technologies-logo.png" alt="Zee Technologies" />
 
         {/* Stats row with responsive flex-wrap & clamp sizes */}
         <div className="hrow">
@@ -713,7 +954,40 @@ export default function App() {
       {form && <Form title={form.title} init={form.init} fields={form.col === 'cars' ? CARF : DRVF} onCancel={() => setForm(null)} onSave={(v) => upsert(form.col, v)} />}
       {recordEditor && <RecordEditor col={recordEditor.col} record={recordEditor.record} d={d} onClose={() => setRecordEditor(null)} onSaved={load} />}
       {pinSheet && <ChangePinModal onClose={() => { setPinSheet(false); setMoreView(null); setTab(previousTab); }} />}
-      {moreOpen && <MoreSheet onClose={() => setMoreOpen(false)} openView={(view) => { setMoreOpen(false); setMoreView(view); }} changePin={() => { setMoreOpen(false); setMoreView('pin'); setPinSheet(true); }} lock={handleLock} />}
+      {moreOpen && (
+        <MoreSheet
+          onClose={() => setMoreOpen(false)}
+          openView={(view) => { setMoreOpen(false); setMoreView(view); }}
+          changePin={() => { setMoreOpen(false); setMoreView('pin'); setPinSheet(true); }}
+          lock={handleLock}
+          bioAvailable={bioAvailable}
+          bioRegistered={bioRegistered}
+          onSetupBio={() => { setMoreOpen(false); setShowBioSetup(true); }}
+          onRemoveBio={() => { setMoreOpen(false); handleRemoveBio(); }}
+          isIOS={isIOS}
+        />
+      )}
+
+      {/* Biometric setup prompt */}
+      {showBioSetup && (
+        <div className="sheet" onClick={() => setShowBioSetup(false)}>
+          <div className="card bio-setup-card" onClick={(e) => e.stopPropagation()}>
+            <div className="bio-setup-icon">
+              {isIOS ? <FaceIdIcon size={40} /> : <FingerprintIcon size={40} />}
+            </div>
+            <h3 style={{ marginTop: 8 }}>{isIOS ? 'Face ID' : 'Fingerprint'} se login karein?</h3>
+            <p style={{ fontSize: 14, opacity: 0.7, margin: '8px 0 16px' }}>
+              Har baar PIN type karne ki zarurat nahi — sirf apna {isIOS ? 'face' : 'finger sensor'} use karein.
+            </p>
+            <div className="row">
+              <button className="ghost" onClick={() => setShowBioSetup(false)} disabled={bioLoading}>Baad mein</button>
+              <button onClick={handleBioRegister} disabled={bioLoading}>
+                {bioLoading ? 'Setting up…' : 'Enable karein'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <nav>{[['reports', 'Reports'], ['cars', 'Cars'], ['entry', 'Entry'], ['drivers', 'Drivers'], ['more', 'More']].map(([k, l]) => <button key={k} className={(k === 'more' ? moreOpen || !!moreView : !moreOpen && !moreView && tab === k) ? 'on' : ''} onClick={() => { if (k === 'more') { setPreviousTab(tab); setMoreOpen(true); } else { setMoreOpen(false); setMoreView(null); setPre(null); setTab(k); } }}><Ico k={k} />{l}</button>)}</nav>
     </>
   );
@@ -878,11 +1152,14 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre, edit }) {
   );
 }
 
-function MoreSheet({ onClose, openView, changePin, lock }) {
+function MoreSheet({ onClose, openView, changePin, lock, bioAvailable, bioRegistered, onSetupBio, onRemoveBio, isIOS }) {
   const rows = [
     ['calendar', 'Calendar', () => openView('calendar')],
     ['oil', 'Oil change history', () => openView('oil')],
     ['pin', 'Change PIN', changePin],
+    ...(bioAvailable ? [
+      ['bio', bioRegistered ? `${isIOS ? 'Face ID' : 'Fingerprint'} Active · Remove` : `Enable ${isIOS ? 'Face ID' : 'Fingerprint'}`, bioRegistered ? onRemoveBio : onSetupBio]
+    ] : []),
     ['lock', 'Lock', lock]
   ];
   return <div className="sheet more-sheet" onClick={onClose}><div className="card" onClick={(e) => e.stopPropagation()}>

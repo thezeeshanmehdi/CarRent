@@ -50,7 +50,6 @@ export async function POST(req) {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
-    maxAge: 30 * 86400
   });
   return res;
 }
