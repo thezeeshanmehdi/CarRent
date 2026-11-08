@@ -509,7 +509,7 @@ export default function App() {
             <strong className="stat-num"><Count v={todayE} /></strong>
           </div>
           <div className="stat-block r">
-            <small>Is mahine ka net</small>
+            <small>Is mahine ka total</small>
             <b className="stat-num"><Count v={monNet} /></b>
           </div>
         </div>

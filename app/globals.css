@@ -34,15 +34,7 @@ body{
   box-shadow:0 14px 30px -14px rgba(10,47,61,.6);
 }
 .hero::after{
-  content:"";
-  position:absolute;
-  right:-50px;
-  top:-60px;
-  width:180px;
-  height:180px;
-  border-radius:50%;
-  background:radial-gradient(circle,rgba(255,159,28,.55),transparent 65%);
-  pointer-events:none;
+  content:none;
 }
 
 /* Compact toolbar */
@@ -109,8 +101,8 @@ body{
 .hero small{display:block;font-size:12px;opacity:.8;margin-bottom:2px}
 .hero strong.stat-num{
   display:block;
-  font-size:clamp(22px, 6.2vw, 34px);
-  font-weight:800;
+  font-size:clamp(16px, 4.6vw, 20px);
+  font-weight:700;
   letter-spacing:-.5px;
   line-height:1.15;
   word-break:break-word;
@@ -118,8 +110,8 @@ body{
 .hero .r{text-align:right}
 .hero .r b.stat-num{
   display:block;
-  font-size:clamp(16px, 4.6vw, 20px);
-  font-weight:700;
+  font-size:clamp(22px, 6.2vw, 34px);
+  font-weight:800;
   line-height:1.2;
   word-break:break-word;
 }
