@@ -531,6 +531,9 @@ export default function App() {
           />
         </div>
 
+        {/* Branding logo */}
+        <img className="hero-logo" src="/zee-technologies-logo.png" alt="Zee Technologies" />
+
         {/* Stats row with responsive flex-wrap & clamp sizes */}
         <div className="hrow">
           <div className="stat-block">
