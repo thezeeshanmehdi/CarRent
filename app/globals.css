@@ -183,7 +183,7 @@ body{
   background:repeating-linear-gradient(90deg,rgba(255,255,255,.8) 0 18px,transparent 18px 36px);
   animation:drive 1s linear infinite;
 }
-@keyframes drive{to{background-position:-36px 0}}
+@keyframes drive{to{background-position:36px 0}}
 
 main{padding:16px 14px;max-width:640px;margin:auto}
 main>*{animation:up .5s cubic-bezier(.2,.8,.2,1) both}

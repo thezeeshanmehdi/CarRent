@@ -227,7 +227,7 @@ function ChangePinModal({ onClose }) {
 }
 
 export default function App() {
-  const [tab, setTab] = useState('reports');
+  const [tab, setTab] = useState('entry');
   const [d, setD] = useState({ cars: [], drivers: [], entries: [], expenses: [] });
   const [locked, setLocked] = useState(false);
   const [form, setForm] = useState(null);
@@ -237,7 +237,7 @@ export default function App() {
   const [pre, setPre] = useState(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [moreView, setMoreView] = useState(null);
-  const [previousTab, setPreviousTab] = useState('reports');
+  const [previousTab, setPreviousTab] = useState('entry');
 
   // Health and PWA states
   const [healthInfo, setHealthInfo] = useState(null);
@@ -349,7 +349,7 @@ export default function App() {
         // Unlock immediately on successful login
         setLocked(false);
         setErr('');
-        setTab('reports');
+        setTab('entry');
         setMoreOpen(false);
         setMoreView(null);
         load();
@@ -375,7 +375,7 @@ export default function App() {
   const handleLock = async () => {
     await fetch('/api/login', { method: 'DELETE', credentials: 'same-origin', cache: 'no-store' });
     setLocked(true);
-    setTab('reports');
+    setTab('entry');
     setMoreOpen(false);
     setMoreView(null);
     setD({ cars: [], drivers: [], entries: [], expenses: [] });
@@ -627,7 +627,7 @@ export default function App() {
       {form && <Form title={form.title} init={form.init} fields={form.col === 'cars' ? CARF : DRVF} onCancel={() => setForm(null)} onSave={(v) => upsert(form.col, v)} />}
       {pinSheet && <ChangePinModal onClose={() => { setPinSheet(false); setMoreView(null); setTab(previousTab); }} />}
       {moreOpen && <MoreSheet onClose={() => setMoreOpen(false)} openView={(view) => { setMoreOpen(false); setMoreView(view); }} changePin={() => { setMoreOpen(false); setMoreView('pin'); setPinSheet(true); }} lock={handleLock} />}
-      <nav>{[['entry', 'Entry'], ['cars', 'Cars'], ['reports', 'Reports'], ['drivers', 'Drivers'], ['more', 'More']].map(([k, l]) => <button key={k} className={(k === 'more' ? moreOpen || !!moreView : !moreOpen && !moreView && tab === k) ? 'on' : ''} onClick={() => { if (k === 'more') { setPreviousTab(tab); setMoreOpen(true); } else { setMoreOpen(false); setMoreView(null); setPre(null); setTab(k); } }}><Ico k={k} />{l}</button>)}</nav>
+      <nav>{[['reports', 'Reports'], ['cars', 'Cars'], ['entry', 'Entry'], ['drivers', 'Drivers'], ['more', 'More']].map(([k, l]) => <button key={k} className={(k === 'more' ? moreOpen || !!moreView : !moreOpen && !moreView && tab === k) ? 'on' : ''} onClick={() => { if (k === 'more') { setPreviousTab(tab); setMoreOpen(true); } else { setMoreOpen(false); setMoreView(null); setPre(null); setTab(k); } }}><Ico k={k} />{l}</button>)}</nav>
     </>
   );
 }
