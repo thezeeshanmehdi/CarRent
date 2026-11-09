@@ -974,9 +974,38 @@ export default function App() {
 function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre, edit }) {
   const [mode, setMode] = useState(pre?.mode || 'earning');
   const [date, setDate] = useState(pre?.date || local());
-  const [v, setV] = useState({ carId: pre?.carId, driverId: pre?.driverId, category: pre?.category || 'Fuel' });
+  const [v, setV] = useState(() => {
+    const selectedCar = d.cars.find((item) => item._id === pre?.carId);
+    const driverId = pre?.driverId || selectedCar?.driverId || '';
+    const assignedDriver = d.drivers.find((item) => item._id === driverId);
+    return {
+      carId: pre?.carId,
+      driverId,
+      amount: (pre?.mode || 'earning') === 'earning' ? assignedDriver?.dailyRent ?? '' : '',
+      category: pre?.category || 'Fuel'
+    };
+  });
   const [ok, setOk] = useState(false);
   const set = (k) => (e) => setV({ ...v, [k]: e.target.value });
+  const earningDefaults = (carId, current = v) => {
+    const selectedCar = d.cars.find((item) => item._id === carId);
+    const assignedDriver = d.drivers.find((item) => item._id === selectedCar?.driverId);
+    return {
+      ...current,
+      carId,
+      driverId: selectedCar?.driverId || '',
+      amount: assignedDriver?.dailyRent ?? ''
+    };
+  };
+  const selectCar = (e) => {
+    const carId = typeof e === 'string' ? e : e.target.value;
+    setV(mode === 'earning' ? earningDefaults(carId) : { ...v, carId });
+  };
+  const selectDriver = (e) => {
+    const driverId = e.target.value;
+    const selectedDriver = d.drivers.find((item) => item._id === driverId);
+    setV({ ...v, driverId, amount: selectedDriver?.dailyRent ?? '' });
+  };
   const dayE = d.entries.filter((e) => e.date === date);
   const absent = d.cars.filter((c) => !dayE.some((e) => e.carId === c._id));
 
@@ -1027,7 +1056,9 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre, edit }) {
       }
       await api('POST', 'expenses', expBody);
     }
-    setV({ carId: v.carId, category: v.category });
+    setV(mode === 'earning'
+      ? earningDefaults(v.carId, { category: v.category })
+      : { carId: v.carId, category: v.category });
     setOk(true);
     setTimeout(() => setOk(false), 1300);
     load();
@@ -1036,14 +1067,14 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre, edit }) {
   return (
     <>
       <div className="row seg" style={{ marginBottom: 10 }}>
-        <button className={mode === 'earning' ? 'on' : ''} onClick={() => setMode('earning')}>Daily earning</button>
+        <button className={mode === 'earning' ? 'on' : ''} onClick={() => { setMode('earning'); if (v.carId) setV(earningDefaults(v.carId)); }}>Daily earning</button>
         <button className={mode === 'expense' ? 'on' : ''} onClick={() => setMode('expense')}>Expense</button>
       </div>
       <div className="card">
         <label>Date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
-        <label>Car<select value={v.carId || ''} onChange={set('carId')}><option value="">Select car</option>{carOpts.map(([a, b]) => <option key={a} value={a}>{b}</option>)}</select></label>
+        <label>Car<select value={v.carId || ''} onChange={selectCar}><option value="">Select car</option>{carOpts.map(([a, b]) => <option key={a} value={a}>{b}</option>)}</select></label>
         {mode === 'earning'
-          ? <label>Driver<select value={v.driverId || ''} onChange={set('driverId')}><option value="">Car's current driver</option>{drvOpts.map(([a, b]) => <option key={a} value={a}>{b}</option>)}</select></label>
+          ? <label>Driver<select value={v.driverId || ''} onChange={selectDriver}><option value="">Car's current driver</option>{drvOpts.map(([a, b]) => <option key={a} value={a}>{b}</option>)}</select></label>
           : <label>Category<select value={v.category || 'Fuel'} onChange={set('category')}>{CATS.map(([a, b]) => <option key={a}>{b}</option>)}</select></label>}
 
         {isOil && v.carId && (
@@ -1111,7 +1142,7 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre, edit }) {
         </button>
       </div>
       {absent.length > 0 && <div className="card"><b className="abs">No record on {date}</b>
-        <div className="chips">{absent.map((c) => <button key={c._id} className="chip" onClick={() => { setMode('earning'); setV({ ...v, carId: c._id }); }}>{c.name}</button>)}</div></div>}
+        <div className="chips">{absent.map((c) => <button key={c._id} className="chip" onClick={() => { setMode('earning'); setV(earningDefaults(c._id)); }}>{c.name}</button>)}</div></div>}
       {dayE.map((e) => <div className="card between" key={e._id}><span><b>{car(e.carId)}</b> <span className="mute">{drv(e.driverId)}{e.note ? ` · ${e.note}` : ''}</span></span><span className="record-actions"><span className="earn">{rs(e.earning)}</span><button className="ghost record-edit" onClick={() => edit('entries', e)}>Edit</button><button className="del" onClick={() => del('entries', e._id, 'Delete this earning record?')}>Delete</button></span></div>)}
       {d.expenses.filter((e) => e.date === date).map((e) => (
         <div className="card between" key={e._id}>
@@ -1321,7 +1352,7 @@ function Cal({ d, go }) {
       </div>
       {list.length === 0 ? <p className="mute">Add a {by} first.</p> : <>
         <div className="card">
-          <select value={sel || ''} onChange={(e) => setId(e.target.value)}>{list.map((x) => <option key={x._id} value={x._id}>{x.name}</option>)}</select>
+          <select value={sel || ''} onChange={(e) => setId(e.target.value)}>{list.map((x) => <option key={x._id} value={x._id}>{by === 'car' && x.number ? `${x.name} (${x.number})` : x.name}</option>)}</select>
           <div className="between" style={{ marginTop: 10 }}>
             <button className="ghost" onClick={() => shift(-1)}>‹</button>
             <b>{new Date(y, mo - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })}</b>
