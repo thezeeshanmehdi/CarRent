@@ -884,11 +884,11 @@ export default function App() {
         )}
 
         {moreView && <button className="back-btn ghost" onClick={() => { setMoreView(null); setTab(previousTab); }}>‹ Back</button>}
-        {moreView === 'calendar' && <Cal d={d} go={(x) => { setPre(x); setMoreView(null); setTab('entry'); }} />}
-        {moreView === 'oil' && <OilHistory d={d} load={load} del={del} edit={(record) => setRecordEditor({ col: 'expenses', record })} add={(carId) => { setPre({ mode: 'expense', category: 'Oil change', carId }); setMoreView(null); setTab('entry'); }} />}
+        {!moreView && tab === 'calendar' && <Cal d={d} go={(x) => { setPre(x); setTab('entry'); }} />}
+        {!moreView && tab === 'oil' && <OilHistory d={d} load={load} del={del} edit={(record) => setRecordEditor({ col: 'expenses', record })} add={(carId) => { setPre({ mode: 'expense', category: 'Oil change', carId }); setTab('entry'); }} />}
         {!moreView && tab === 'entry' && <Entry {...{ d, car, drv, carOpts, drvOpts, load, del, pre }} edit={(col, record) => setRecordEditor({ col, record })} />}
         {!moreView && tab === 'reports' && <Reports {...{ d, car, drv }} />}
-        {!moreView && tab === 'cars' && <>
+        {moreView === 'cars' && <>
           <button style={{ width: '100%', marginBottom: 10 }} onClick={() => setForm({ col: 'cars', init: {}, title: 'New car' })}>+ Add car</button>
           {d.cars.length === 0 && <p className="mute">No cars yet. Add your first car.</p>}
           {d.cars.map((c) => {
@@ -915,7 +915,7 @@ export default function App() {
             );
           })}
         </>}
-        {!moreView && tab === 'drivers' && <>
+        {moreView === 'drivers' && <>
           <button style={{ width: '100%', marginBottom: 10 }} onClick={() => setForm({ col: 'drivers', init: {}, title: 'New driver' })}>+ Add driver</button>
           {d.drivers.length === 0 && <p className="mute">No drivers yet. Add your first driver.</p>}
           {d.drivers.map((c) => (
@@ -966,7 +966,7 @@ export default function App() {
           </div>
         </div>
       )}
-      <nav>{[['reports', 'Reports'], ['cars', 'Cars'], ['entry', 'Entry'], ['drivers', 'Drivers'], ['more', 'More']].map(([k, l]) => <button key={k} className={(k === 'more' ? moreOpen || !!moreView : !moreOpen && !moreView && tab === k) ? 'on' : ''} onClick={() => { if (k === 'more') { setPreviousTab(tab); setMoreOpen(true); } else { setMoreOpen(false); setMoreView(null); setPre(null); setTab(k); } }}><Ico k={k} />{l}</button>)}</nav>
+      <nav>{[['reports', 'Reports'], ['calendar', 'Calendar'], ['entry', 'Entry'], ['oil', 'Oil History'], ['more', 'More']].map(([k, l]) => <button key={k} className={(k === 'more' ? moreOpen || !!moreView : !moreOpen && !moreView && tab === k) ? 'on' : ''} onClick={() => { if (k === 'more') { setPreviousTab(tab); setMoreOpen(true); } else { setMoreOpen(false); setMoreView(null); setPre(null); setTab(k); } }}><Ico k={k} />{l}</button>)}</nav>
     </>
   );
 }
@@ -1163,8 +1163,8 @@ function Entry({ d, car, drv, carOpts, drvOpts, load, del, pre, edit }) {
 
 function MoreSheet({ onClose, openView, changePin, lock, bioAvailable, bioRegistered, onSetupBio, onRemoveBio, isIOS }) {
   const rows = [
-    ['calendar', 'Calendar', () => openView('calendar')],
-    ['oil', 'Oil change history', () => openView('oil')],
+    ['cars', 'Cars', () => openView('cars')],
+    ['drivers', 'Drivers', () => openView('drivers')],
     ['pin', 'Change PIN', changePin],
     ...(bioAvailable ? [
       ['bio', bioRegistered ? `${isIOS ? 'Face ID' : 'Fingerprint'} Active · Remove` : `Enable ${isIOS ? 'Face ID' : 'Fingerprint'}`, bioRegistered ? onRemoveBio : onSetupBio]
