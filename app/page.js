@@ -672,28 +672,6 @@ export default function App() {
             <div><span>Welcome back</span><h2>Unlock your logbook</h2></div>
           </div>
 
-          {/* Biometric login button — shown only when registered */}
-          {bioAvailable && bioRegistered && (
-            <div className="bio-section">
-              <button
-                type="button"
-                className="bio-big-btn"
-                onClick={handleBioLogin}
-                disabled={bioLoading}
-                aria-label={isIOS ? 'Login with Face ID' : 'Login with Fingerprint'}
-              >
-                <div className="bio-big-icon">
-                  {isIOS ? <FaceIdIcon size={28} /> : <FingerprintIcon size={28} />}
-                </div>
-                <div className="bio-big-label">
-                  <strong>{isIOS ? 'Face ID se Unlock karein' : 'Fingerprint se Unlock karein'}</strong>
-                  <small>{bioLoading ? 'Scanning…' : (isIOS ? 'Tap karein Face ID sensor ke liye' : 'Tap karein finger sensor scan ke liye')}</small>
-                </div>
-              </button>
-              <div className="bio-divider"><span>ya PIN enter karein</span></div>
-            </div>
-          )}
-
           <p className="login-helper">
             {bioAvailable && !bioRegistered
               ? `Apna PIN enter karein. Login ke baad aap ${isIOS ? 'Face ID' : 'Fingerprint'} enable kar saktay hain.`

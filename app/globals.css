@@ -329,23 +329,10 @@ nav{
 .login-submit{width:100%;min-height:54px;display:flex;align-items:center;justify-content:center;gap:10px;color:#fff;border-radius:16px;background:linear-gradient(135deg,#0a4552,var(--mid) 60%,#0b8f88);box-shadow:0 12px 24px -12px rgba(10,70,83,.72);font-size:15px}
 .login-submit span{font-size:22px;line-height:0;transition:transform .2s}.login-submit:hover span{transform:translateX(3px)}
 .login-btn-row{display:flex;gap:10px;align-items:stretch;margin-top:14px}
-.login-btn-row .login-submit{margin-top:0}
+.login-btn-row .login-submit{margin-top:0;flex:1;min-width:0}
 .login-bio-icon-btn{width:54px;min-height:54px;padding:0;border-radius:16px;border:1.5px solid rgba(18,181,166,.45);background:rgba(18,181,166,.12);color:var(--mid);display:grid;place-items:center;cursor:pointer;flex-shrink:0;box-shadow:none;transition:background .2s,color .2s,transform .15s}
 .login-bio-icon-btn:hover{background:var(--teal);color:#fff}
 .login-bio-icon-btn:active{transform:scale(.95)}
-
-/* Biometric card styles */
-.bio-section{margin:16px 0 14px}
-.bio-big-btn{width:100%;padding:14px 18px;display:flex;align-items:center;gap:14px;background:linear-gradient(135deg,rgba(18,181,166,.12),rgba(10,47,61,.06));border:1.5px solid rgba(18,181,166,.38);border-radius:16px;color:var(--ink);cursor:pointer;text-align:left;box-shadow:0 6px 18px -8px rgba(18,181,166,.3);transition:all .2s ease}
-.bio-big-btn:hover{background:linear-gradient(135deg,rgba(18,181,166,.2),rgba(10,47,61,.1));border-color:var(--teal);transform:translateY(-1px)}
-.bio-big-btn:active{transform:scale(.98)}
-.bio-big-icon{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--mid),var(--teal));color:#fff;display:grid;place-items:center;flex-shrink:0;box-shadow:0 6px 16px -6px rgba(18,181,166,.6)}
-.bio-big-label{display:flex;flex-direction:column;gap:2px}
-.bio-big-label strong{font-size:15px;color:var(--ink);font-weight:700}
-.bio-big-label small{font-size:12px;color:var(--mute)}
-.bio-divider{display:flex;align-items:center;text-align:center;margin:16px 0 8px;color:var(--mute);font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase}
-.bio-divider::before,.bio-divider::after{content:"";flex:1;border-bottom:1px solid var(--line)}
-.bio-divider span{padding:0 10px}
 
 /* Biometric setup popup */
 .bio-setup-card{text-align:center;padding:26px 22px}
